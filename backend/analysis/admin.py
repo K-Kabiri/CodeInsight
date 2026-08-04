@@ -1,3 +1,7 @@
 from django.contrib import admin
 
-# Register your models here.
+from .models import Analysis, AnalysisMetric, MetricDefinition
+
+admin.site.register(Analysis)
+admin.site.register(AnalysisMetric)
+admin.site.register(MetricDefinition)
