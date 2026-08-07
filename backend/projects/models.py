@@ -1,9 +1,9 @@
 from django.contrib.auth.models import User
 from django.db import models
 
+
 # ========== Project ==========
 class Project(models.Model):
-
     owner = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -23,12 +23,10 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
-    
-    
-    
+
+
 #  ========== Project Version ==========
 class ProjectVersion(models.Model):
-
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -47,6 +45,13 @@ class ProjectVersion(models.Model):
 
     class Meta:
         ordering = ["-uploaded_at"]
+
+    constraints = [
+        models.UniqueConstraint(
+            fields=["project", "version_number"],
+            name="unique_project_version",
+        )
+    ]
 
     def __str__(self):
         return f"{self.project.name} v{self.version_number}"
