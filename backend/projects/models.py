@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from django.db import models
-
+from django.core.validators import FileExtensionValidator
 
 # ========== Project ==========
 class Project(models.Model):
@@ -35,10 +35,14 @@ class ProjectVersion(models.Model):
 
     version_number = models.PositiveIntegerField()
 
-    zip_file = models.FileField(
-        upload_to="projects/"
+    source_file = models.FileField(
+        upload_to="projects/",
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=["py", "zip"]
+            )
+        ]
     )
-
     uploaded_at = models.DateTimeField(
         auto_now_add=True
     )
@@ -46,12 +50,12 @@ class ProjectVersion(models.Model):
     class Meta:
         ordering = ["-uploaded_at"]
 
-    constraints = [
-        models.UniqueConstraint(
-            fields=["project", "version_number"],
-            name="unique_project_version",
-        )
-    ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "version_number"],
+                name="unique_project_version",
+            )
+        ]
 
     def __str__(self):
         return f"{self.project.name} v{self.version_number}"

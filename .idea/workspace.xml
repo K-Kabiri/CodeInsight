@@ -6,6 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="22cea00b-1e40-4df3-811f-4f1b64c16dc2" name="Changes" comment="fix(admin): edit admin files.">
       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="22cea00b-1e40-4df3-811f-4f1b64c16dc2" name="Changes" comment="feat(projects): add project and project version domain models">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/analysis/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/analysis/admin.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/reports/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/reports/admin.py" afterDir="false" />
@@ -33,6 +34,7 @@
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
         <entry key="$PROJECT_DIR$" value="main" />
+        <entry key="$PROJECT_DIR$" value="feature/report-model" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -146,6 +148,7 @@
       <workItem from="1785769530437" duration="1730000" />
       <workItem from="1785851561501" duration="136000" />
       <workItem from="1785851837464" duration="228000" />
+      <workItem from="1785861280342" duration="1016000" />
       <workItem from="1785861280342" duration="698000" />
     </task>
     <task id="LOCAL-00001" summary="feat(projects): add project and project version domain models">
@@ -165,6 +168,31 @@
       <updated>1785861488553</updated>
     </task>
     <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00002" summary="fix(admin): edit admin files.">
+      <option name="closed" value="true" />
+      <created>1785861488553</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1785861488553</updated>
+    </task>
+    <task id="LOCAL-00003" summary="feat(report): add report model.">
+      <option name="closed" value="true" />
+      <created>1786085427587</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1786085427587</updated>
+    </task>
+    <task id="LOCAL-00004" summary="fix: some changes were made on  admin files.">
+      <option name="closed" value="true" />
+      <created>1786085468227</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1786085468227</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -198,5 +226,9 @@
     <MESSAGE value="Add xml files." />
     <MESSAGE value="fix(admin): edit admin files." />
     <option name="LAST_COMMIT_MESSAGE" value="fix(admin): edit admin files." />
+    <MESSAGE value="fix(admin): edit admin files." />
+    <MESSAGE value="feat(report): add report model." />
+    <MESSAGE value="fix: some changes were made on  admin files." />
+    <option name="LAST_COMMIT_MESSAGE" value="fix: some changes were made on  admin files." />
   </component>
 </project>
