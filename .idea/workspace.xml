@@ -12,6 +12,7 @@
       <change beforePath="$PROJECT_DIR$/backend/reports/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/reports/admin.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/reports/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/reports/models.py" afterDir="false" />
     </list>
+    <list default="true" id="22cea00b-1e40-4df3-811f-4f1b64c16dc2" name="Changes" comment="fix(migration): Fix models and regenerate migrations." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -65,7 +66,7 @@
     "RunOnceActivity.OpenDjangoStructureViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.pycharm.django.structure.promotion.once.per.project": "true",
-    "git-widget-placeholder": "feature/report-model",
+    "git-widget-placeholder": "main",
     "last_opened_file_path": "E:/University/Final Project/CodeInsight",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -230,5 +231,7 @@
     <MESSAGE value="feat(report): add report model." />
     <MESSAGE value="fix: some changes were made on  admin files." />
     <option name="LAST_COMMIT_MESSAGE" value="fix: some changes were made on  admin files." />
+    <MESSAGE value="fix(migration): Fix models and regenerate migrations." />
+    <option name="LAST_COMMIT_MESSAGE" value="fix(migration): Fix models and regenerate migrations." />
   </component>
 </project>
