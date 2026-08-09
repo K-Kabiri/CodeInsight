@@ -25,14 +25,14 @@ class ZipLoader(BaseLoader):
         self.zip_path = Path(zip_path)
 
     def load(self) -> list[Path]:
-        temp_dir = tempfile.mkdtemp()
+        temp_dir = Path(tempfile.mkdtemp())
 
         with zipfile.ZipFile(self.zip_path, "r") as zip_ref:
-            zip_ref.extractall(temp_dir)
+            self._safe_extract(zip_ref, temp_dir)
 
         python_files = []
 
-        for path in Path(temp_dir).rglob("*.py"):
+        for path in temp_dir.rglob("*.py"):
 
             if any(part.startswith(".") for part in path.parts):
                 continue
@@ -43,3 +43,17 @@ class ZipLoader(BaseLoader):
             python_files.append(path)
 
         return python_files
+
+    @staticmethod
+    def _safe_extract(zip_ref: zipfile.ZipFile, destination: Path) -> None:
+        destination = destination.resolve()
+
+        for member in zip_ref.infolist():
+            member_path = (destination / member.filename).resolve()
+
+            if not member_path.is_relative_to(destination):
+                raise ValueError(
+                    f"Unsafe ZIP file path: {member.filename}"
+                )
+
+        zip_ref.extractall(destination)

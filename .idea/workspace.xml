@@ -4,6 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
+    <list default="true" id="22cea00b-1e40-4df3-811f-4f1b64c16dc2" name="Changes" comment="feat(loader): add zip loader file.">
+      <change afterPath="$PROJECT_DIR$/backend/analysis/engines/base.py" afterDir="false" />
     <list default="true" id="22cea00b-1e40-4df3-811f-4f1b64c16dc2" name="Changes" comment="fix(admin): edit admin files.">
       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
     <list default="true" id="22cea00b-1e40-4df3-811f-4f1b64c16dc2" name="Changes" comment="feat(projects): add project and project version domain models">
@@ -17,6 +19,13 @@
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
   </component>
   <component name="Git.Settings">
     <excluded-from-favorite>
@@ -233,5 +242,7 @@
     <option name="LAST_COMMIT_MESSAGE" value="fix: some changes were made on  admin files." />
     <MESSAGE value="fix(migration): Fix models and regenerate migrations." />
     <option name="LAST_COMMIT_MESSAGE" value="fix(migration): Fix models and regenerate migrations." />
+    <MESSAGE value="feat(loader): add zip loader file." />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(loader): add zip loader file." />
   </component>
 </project>
