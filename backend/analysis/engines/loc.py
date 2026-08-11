@@ -1,71 +1,128 @@
-import ast
-import io
-import tokenize
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from radon.raw import analyze
+
 from .base import BaseMetricEngine
+
+
+@dataclass(frozen=True)
+class LOCFileMetrics:
+    """
+    Raw source-code metrics calculated by Radon for a single file.
+    """
+
+    loc: int
+    lloc: int
+    sloc: int
+    comments: int
+    single_comments: int
+    multi: int
+    blank: int
+
+    @property
+    def comment_ratio(self) -> float:
+        """
+        Ratio of comment lines to physical LOC.
+        """
+        if self.loc == 0:
+            return 0.0
+
+        return self.comments / self.loc
+
+    def to_dict(self) -> dict:
+        """
+        Convert metrics to a serializable dictionary.
+        """
+        return {
+            **asdict(self),
+            "comment_ratio": self.comment_ratio,
+        }
 
 
 class LOCEngine(BaseMetricEngine):
 
     def calculate(self, python_files: list[Path]) -> int:
-        total_lines = 0
+        """
+        Return the total physical LOC across all Python files.
+
+        LOC follows Radon's raw metric definition.
+        """
+        metrics = self.calculate_detailed(python_files)
+
+        return metrics["loc"]
+
+    def calculate_detailed(
+            self,
+            python_files: list[Path],
+    ) -> dict:
+        """
+        Calculate all Radon raw metrics.
+
+        Returns both project-level totals and per-file metrics.
+        """
+
+        file_metrics = []
 
         for file_path in python_files:
-            total_lines += self._count_file_lines(file_path)
+            metrics = self._analyze_file(file_path)
 
-        return total_lines
+            file_metrics.append(
+                {
+                    "file": str(file_path),
+                    **metrics.to_dict(),
+                }
+            )
 
-    @staticmethod
-    def _count_file_lines(file_path: Path) -> int:
-        source_code = file_path.read_text(encoding="utf-8")
+        totals = {
+            "loc": sum(item["loc"] for item in file_metrics),
+            "lloc": sum(item["lloc"] for item in file_metrics),
+            "sloc": sum(item["sloc"] for item in file_metrics),
+            "comments": sum(
+                item["comments"]
+                for item in file_metrics
+            ),
+            "single_comments": sum(
+                item["single_comments"]
+                for item in file_metrics
+            ),
+            "multi": sum(
+                item["multi"]
+                for item in file_metrics
+            ),
+            "blank": sum(
+                item["blank"]
+                for item in file_metrics
+            ),
+        }
 
-        tree = ast.parse(source_code)
-
-        docstring_lines = set()
-
-        for node in ast.walk(tree):
-            if isinstance(
-                    node,
-                    (
-                            ast.Module,
-                            ast.FunctionDef,
-                            ast.AsyncFunctionDef,
-                            ast.ClassDef,
-                    ),
-            ):
-                if ast.get_docstring(node) and node.body:
-                    docstring = node.body[0]
-
-                    if isinstance(docstring, ast.Expr):
-                        value = docstring.value
-
-                        if isinstance(value, ast.Constant) and isinstance(
-                                value.value, str
-                        ):
-                            start = value.lineno
-                            end = getattr(value, "end_lineno", start)
-
-                            docstring_lines.update(
-                                range(start, end + 1)
-                            )
-
-        code_lines = set()
-
-        tokens = tokenize.generate_tokens(
-            io.StringIO(source_code).readline
+        totals["comment_ratio"] = (
+            totals["comments"] / totals["loc"]
+            if totals["loc"] > 0
+            else 0.0
         )
 
-        for token in tokens:
-            if token.type in {
-                tokenize.NAME,
-                tokenize.NUMBER,
-                tokenize.STRING,
-                tokenize.OP,
-            }:
-                line = token.start[0]
+        return {
+            "totals": totals,
+            "files": file_metrics,
+        }
 
-                if line not in docstring_lines:
-                    code_lines.add(line)
+    @staticmethod
+    def _analyze_file(
+            file_path: Path,
+    ) -> LOCFileMetrics:
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
 
-        return len(code_lines)
+        result = analyze(source_code)
+
+        return LOCFileMetrics(
+            loc=result.loc,
+            lloc=result.lloc,
+            sloc=result.sloc,
+            comments=result.comments,
+            single_comments=result.single_comments,
+            multi=result.multi,
+            blank=result.blank,
+        )
