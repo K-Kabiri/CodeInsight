@@ -1,7 +1,10 @@
+from .cyclomatic import CyclomaticComplexityEngine
 from .loc import LOCEngine
+
 
 ENGINE_REGISTRY = {
     "LOC": LOCEngine,
+    "CYCLOMATIC_COMPLEXITY": CyclomaticComplexityEngine,
 }
 
 
