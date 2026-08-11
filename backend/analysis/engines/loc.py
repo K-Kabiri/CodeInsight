@@ -48,9 +48,9 @@ class LOCEngine(BaseMetricEngine):
 
         LOC follows Radon's raw metric definition.
         """
-        metrics = self.calculate_detailed(python_files)
+        result = self.calculate_detailed(python_files)
 
-        return metrics["loc"]
+        return result["totals"]["loc"]
 
     def calculate_detailed(
             self,
