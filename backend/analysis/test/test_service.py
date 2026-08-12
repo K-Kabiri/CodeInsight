@@ -88,7 +88,7 @@ hello()
 
         self.assertEqual(
             analysis_metric.value,
-            4,
+            5,
         )
 
         self.assertIsNotNone(
