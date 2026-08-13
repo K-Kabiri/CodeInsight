@@ -9,19 +9,38 @@ class CognitiveComplexityEngine(BaseMetricEngine):
     Cognitive Complexity engine for Python.
 
     Based on the Cognitive Complexity model introduced by
-    SonarSource and adapted to Python syntax using the AST.
+    SonarSource.
 
-    The implementation considers:
+    The implementation follows the main concepts of the
+    Cognitive Complexity model:
 
-    - structural increments
-    - nesting increments
-    - hybrid increments
-    - fundamental increments
-    - logical/boolean sequences
-    - recursion
+    - Structural increments:
+        if
+        elif
+        else
+        loops
+        except
+        match
+        conditional expressions
 
-    Complexity is calculated independently for every function
-    and method and then aggregated at file/project level.
+    - Nesting increments:
+        Structural increments become more expensive when
+        they appear inside nested control-flow structures.
+
+    - Fundamental increments:
+        break
+        continue
+        recursion
+
+    - Logical sequences:
+        A sequence of binary logical operators contributes
+        one point for each logical sequence.
+
+    Complexity is calculated independently for each function
+    or method and then aggregated at file/project level.
+
+    Detailed contributions are preserved so that the reporting
+    and AI layers can explain how the final score was produced.
     """
 
     def calculate(self, python_files: list[Path]) -> int:
@@ -63,6 +82,7 @@ class CognitiveComplexityEngine(BaseMetricEngine):
 
     @staticmethod
     def _analyze_file(file_path: Path) -> dict:
+
         source_code = file_path.read_text(
             encoding="utf-8"
         )
@@ -154,6 +174,10 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         self._function_stack = []
         self._class_stack = []
 
+    # =========================================================
+    # Context
+    # =========================================================
+
     @property
     def current_function(self):
         if not self._function_stack:
@@ -168,11 +192,8 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         return self._class_stack[-1]
 
-    # =========================================================
-    # Function handling
-    # =========================================================
-
     def _create_function_context(self, node):
+
         return _FunctionContext(
             name=node.name,
             lineno=node.lineno,
@@ -186,6 +207,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         )
 
     def _finish_function(self, context):
+
         result = {
             "name": context.name,
             "type": (
@@ -205,7 +227,12 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         self.functions.append(result)
 
+    # =========================================================
+    # Functions
+    # =========================================================
+
     def visit_FunctionDef(self, node):
+
         context = self._create_function_context(node)
 
         self._function_stack.append(context)
@@ -218,6 +245,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         self._finish_function(context)
 
     def visit_AsyncFunctionDef(self, node):
+
         context = self._create_function_context(node)
 
         self._function_stack.append(context)
@@ -234,6 +262,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_ClassDef(self, node):
+
         self._class_stack.append(node.name)
 
         for statement in node.body:
@@ -251,6 +280,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             kind: str,
             reason: str,
     ):
+
         context = self.current_function
 
         if context is None:
@@ -270,6 +300,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_If(self, node):
+
         context = self.current_function
 
         if context is None:
@@ -282,7 +313,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             reason="break in linear flow",
         )
 
-        # Analyze the condition itself.
         self.visit(node.test)
 
         context.enter_nesting()
@@ -293,11 +323,16 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         context.leave_nesting()
 
         if node.orelse:
+
             if (
                     len(node.orelse) == 1
-                    and isinstance(node.orelse[0], ast.If)
+                    and isinstance(
+                node.orelse[0],
+                ast.If,
+            )
             ):
                 self._visit_elif(node.orelse[0])
+
             else:
                 self._visit_else(node.orelse)
 
@@ -306,14 +341,18 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def _visit_elif(self, node):
+
         context = self.current_function
 
         if context is None:
             return
 
-        # `elif` is a hybrid increment.
+        # `elif` contributes +1.
         #
-        # It contributes +1 but does not increase nesting.
+        # It does not add another nesting level itself.
+        # However, its body is still nested relative to the
+        # surrounding control-flow structure.
+
         context.add(
             node=node,
             amount=1,
@@ -331,11 +370,16 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         context.leave_nesting()
 
         if node.orelse:
+
             if (
                     len(node.orelse) == 1
-                    and isinstance(node.orelse[0], ast.If)
+                    and isinstance(
+                node.orelse[0],
+                ast.If,
+            )
             ):
                 self._visit_elif(node.orelse[0])
+
             else:
                 self._visit_else(node.orelse)
 
@@ -344,6 +388,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def _visit_else(self, statements):
+
         context = self.current_function
 
         if context is None:
@@ -351,10 +396,8 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         first_node = statements[0]
 
-        # Sonar Cognitive Complexity treats `else`
-        # as a break in linear flow.
-        #
-        # It receives +1 but does not increase nesting.
+        # `else` contributes +1 but does NOT introduce
+        # an additional nesting level.
         context.add(
             node=first_node,
             amount=1,
@@ -370,6 +413,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_For(self, node):
+
         context = self.current_function
 
         if context is None:
@@ -382,7 +426,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             reason="loop structure",
         )
 
-        self.visit(node.target)
         self.visit(node.iter)
 
         context.enter_nesting()
@@ -407,6 +450,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_While(self, node):
+
         context = self.current_function
 
         if context is None:
@@ -436,13 +480,17 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_Try(self, node):
+
         context = self.current_function
 
         if context is None:
             self.generic_visit(node)
             return
 
-        # `try` itself does not receive an increment.
+        # `try`, `else`, and `finally` do not themselves
+        # contribute complexity.
+        #
+        # Each exception handler is counted separately.
 
         for statement in node.body:
             self.visit(statement)
@@ -461,6 +509,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_ExceptHandler(self, node):
+
         context = self.current_function
 
         if context is None:
@@ -484,13 +533,18 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_IfExp(self, node):
+
         context = self.current_function
 
         if context is None:
             self.generic_visit(node)
             return
 
-        # Conditional expression is a shorthand conditional.
+        # Ternary expressions contribute +1.
+        #
+        # Unlike a normal `if`, the ternary does NOT introduce
+        # an additional nesting level.
+
         context.add(
             node=node,
             amount=1,
@@ -503,42 +557,31 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         self.visit(node.orelse)
 
     # =========================================================
-    # BOOLEAN / LOGICAL SEQUENCES
+    # BOOLEAN EXPRESSIONS
     # =========================================================
 
     def visit_BoolOp(self, node):
+
         context = self.current_function
 
         if context is None:
             self.generic_visit(node)
             return
 
-        # Every BoolOp node represents one logical sequence.
-        #
-        # Therefore:
+        # Each logical operator sequence contributes +1.
         #
         # a and b and c
-        #
-        # => one BoolOp => +1
-        #
-        # while:
+        # -> one sequence
         #
         # a and b or c
-        #
-        # is represented by nested BoolOp nodes:
-        #
-        # Or(
-        #     And(a, b),
-        #     c
-        # )
-        #
-        # => two sequences => +2
+        # -> two sequences because the AST contains
+        #    nested BoolOp nodes.
 
         context.add(
             node=node,
             amount=1,
             kind="boolean_sequence",
-            reason="change in logical operator sequence",
+            reason="sequence of binary logical operators",
         )
 
         for value in node.values:
@@ -549,6 +592,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_Break(self, node):
+
         context = self.current_function
 
         if context is None:
@@ -566,6 +610,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_Continue(self, node):
+
         context = self.current_function
 
         if context is None:
@@ -583,14 +628,16 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_Match(self, node):
+
         context = self.current_function
 
         if context is None:
             self.generic_visit(node)
             return
 
-        # Similar to switch in the Cognitive Complexity model:
-        # the whole branching structure receives one increment.
+        # Python `match` is treated as a switch-like
+        # multi-way branching structure.
+
         self._add_structural(
             node,
             kind="match",
@@ -607,17 +654,20 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         context.leave_nesting()
 
     def _visit_match_case(self, case):
+
         context = self.current_function
 
         if context is None:
             return
 
-        # Ordinary cases do not receive individual increments.
+        # Cases themselves do not contribute.
+        #
+        # A guarded case introduces an additional condition.
 
         if case.guard is not None:
-            context.add(
-                node=case.guard,
-                amount=1,
+
+            self._add_structural(
+                case.guard,
                 kind="match_guard",
                 reason="conditional match guard",
             )
@@ -632,13 +682,17 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
     # =========================================================
 
     def visit_Call(self, node):
+
         context = self.current_function
 
         if context is None:
             self.generic_visit(node)
             return
 
-        if self._is_recursive_call(node, context):
+        if self._is_recursive_call(
+                node,
+                context,
+        ):
             context.add(
                 node=node,
                 amount=1,
@@ -646,7 +700,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
                 reason="recursive call",
             )
 
-        # Normal method/function calls do not contribute.
+        # Normal method/function calls are free.
         self.generic_visit(node)
 
     @staticmethod
@@ -655,7 +709,10 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             context,
     ) -> bool:
 
-        if not isinstance(node.func, ast.Name):
+        if not isinstance(
+                node.func,
+                ast.Name,
+        ):
             return False
 
         return node.func.id == context.name
