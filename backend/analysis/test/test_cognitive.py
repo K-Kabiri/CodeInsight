@@ -33,10 +33,10 @@ class CognitiveComplexityEngineTest(SimpleTestCase):
         return path
 
     # =========================================================
-    # Basic
+    # BASIC
     # =========================================================
 
-    def test_empty_file(self):
+    def test_empty_file_has_zero_complexity(self):
         path = self._create_python_file("")
 
         self.assertEqual(
@@ -75,7 +75,7 @@ def foo(x):
             1,
         )
 
-    def test_if_else_chain(self):
+    def test_if_else_adds_two(self):
         path = self._create_python_file(
             """
 def foo(x):
@@ -93,7 +93,7 @@ def foo(x):
             2,
         )
 
-    def test_if_elif_else_chain(self):
+    def test_if_elif_else_adds_three(self):
         path = self._create_python_file(
             """
 def foo(x):
@@ -106,7 +106,7 @@ def foo(x):
 """
         )
 
-        # if   = 1
+        # if = 1
         # elif = 1
         # else = 1
         self.assertEqual(
@@ -115,7 +115,7 @@ def foo(x):
         )
 
     # =========================================================
-    # Nesting
+    # NESTING
     # =========================================================
 
     def test_nested_if_increases_complexity(self):
@@ -213,14 +213,14 @@ def foo(items):
 """
         )
 
-        # for   = 1
+        # for = 1
         # while = 2
         self.assertEqual(
             self.engine.calculate([path]),
             3,
         )
 
-    def test_async_for(self):
+    def test_async_for_adds_one(self):
         path = self._create_python_file(
             """
 async def foo(items):
@@ -232,6 +232,23 @@ async def foo(items):
         self.assertEqual(
             self.engine.calculate([path]),
             1,
+        )
+
+    def test_loop_with_nested_if(self):
+        path = self._create_python_file(
+            """
+def foo(items):
+    for item in items:
+        if item:
+            process(item)
+"""
+        )
+
+        # for = 1
+        # nested if = 2
+        self.assertEqual(
+            self.engine.calculate([path]),
+            3,
         )
 
     # =========================================================
@@ -248,7 +265,7 @@ def foo(a, b, c):
         )
 
         # if = 1
-        # a and b and c = one boolean sequence = 1
+        # boolean sequence = 1
         self.assertEqual(
             self.engine.calculate([path]),
             2,
@@ -280,8 +297,8 @@ def foo(a, b, c):
         )
 
         # if = 1
-        # and sequence = 1
-        # or sequence = 1
+        # outer BoolOp = 1
+        # inner BoolOp = 1
         self.assertEqual(
             self.engine.calculate([path]),
             3,
@@ -306,6 +323,7 @@ def foo(a, b, c, d):
             if contribution["type"] == "boolean_sequence"
         ]
 
+        # outer BoolOp + two inner BoolOps
         self.assertEqual(
             len(boolean_contributions),
             3,
@@ -326,12 +344,34 @@ def foo():
 """
         )
 
+        # try = 0
+        # except = 1
         self.assertEqual(
             self.engine.calculate([path]),
             1,
         )
 
-    def test_try_does_not_add_complexity(self):
+    def test_multiple_except_handlers_are_counted(self):
+        path = self._create_python_file(
+            """
+def foo():
+    try:
+        operation()
+    except ValueError:
+        handle_value_error()
+    except TypeError:
+        handle_type_error()
+"""
+        )
+
+        # except = 1
+        # except = 1
+        self.assertEqual(
+            self.engine.calculate([path]),
+            2,
+        )
+
+    def test_try_finally_does_not_add_complexity(self):
         path = self._create_python_file(
             """
 def foo():
@@ -362,6 +402,21 @@ def foo(x):
         self.assertEqual(
             self.engine.calculate([path]),
             1,
+        )
+
+    def test_nested_ternary_increases_complexity(self):
+        path = self._create_python_file(
+            """
+def foo(a, b):
+    return 1 if a else 2 if b else 3
+"""
+        )
+
+        # outer ternary = 1
+        # inner ternary = 1
+        self.assertEqual(
+            self.engine.calculate([path]),
+            2,
         )
 
     # =========================================================
@@ -396,6 +451,9 @@ def foo(items):
 """
         )
 
+        # for = 1
+        # if = 2
+        # continue = 1
         self.assertEqual(
             self.engine.calculate([path]),
             4,
@@ -436,6 +494,22 @@ def foo():
             0,
         )
 
+    def test_recursive_call_inside_nested_condition(self):
+        path = self._create_python_file(
+            """
+def countdown(n):
+    if n > 0:
+        return countdown(n - 1)
+"""
+        )
+
+        # if = 1
+        # recursion = 1
+        self.assertEqual(
+            self.engine.calculate([path]),
+            2,
+        )
+
     # =========================================================
     # MATCH
     # =========================================================
@@ -452,13 +526,14 @@ def foo(value):
 """
         )
 
-        # Entire match structure = 1
+        # match = 1
+        # cases = 0
         self.assertEqual(
             self.engine.calculate([path]),
             1,
         )
 
-    def test_match_guard_adds_one(self):
+    def test_match_guard_adds_two(self):
         path = self._create_python_file(
             """
 def foo(value):
@@ -469,10 +544,42 @@ def foo(value):
         )
 
         # match = 1
-        # guard = 1
+        # guard = 1 + current nesting(1) = 2
         self.assertEqual(
             self.engine.calculate([path]),
-            2,
+            3,
+        )
+
+    # =========================================================
+    # ASYNC FUNCTION
+    # =========================================================
+
+    def test_async_function_is_analyzed(self):
+        path = self._create_python_file(
+            """
+async def fetch_data(condition):
+    if condition:
+        return 1
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        function = result["files"][0]["functions"][0]
+
+        self.assertEqual(
+            function["name"],
+            "fetch_data",
+        )
+
+        self.assertEqual(
+            function["complexity"],
+            1,
+        )
+
+        self.assertEqual(
+            function["type"],
+            "function",
         )
 
     # =========================================================
@@ -529,7 +636,6 @@ def second(x):
         path = self._create_python_file(
             """
 def outer(x):
-
     if x:
 
         def inner(y):
@@ -656,6 +762,11 @@ def second(x):
             2,
         )
 
+        self.assertEqual(
+            len(result["files"]),
+            2,
+        )
+
     # =========================================================
     # AVERAGE
     # =========================================================
@@ -690,6 +801,70 @@ def second(x):
         self.assertEqual(
             result["average"],
             0.5,
+        )
+
+    def test_average_is_zero_when_there_are_no_functions(self):
+        path = self._create_python_file(
+            """
+x = 10
+print(x)
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        self.assertEqual(
+            result["total"],
+            0,
+        )
+
+        self.assertEqual(
+            result["average"],
+            0.0,
+        )
+
+        self.assertEqual(
+            result["function_count"],
+            0,
+        )
+
+    # =========================================================
+    # DETAILED RESULT
+    # =========================================================
+
+    def test_metric_name_is_returned(self):
+        path = self._create_python_file(
+            """
+def foo(x):
+    if x:
+        return 1
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        self.assertEqual(
+            result["metric"],
+            "Cognitive Complexity",
+        )
+
+    def test_function_count_is_reported(self):
+        path = self._create_python_file(
+            """
+def first():
+    return 1
+
+
+def second():
+    return 2
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        self.assertEqual(
+            result["function_count"],
+            2,
         )
 
     # =========================================================
@@ -730,6 +905,42 @@ def foo(x):
             3,
         )
 
+    def test_contribution_records_nesting_level(self):
+        path = self._create_python_file(
+            """
+def foo(a, b):
+    if a:
+        if b:
+            return 1
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        function = result["files"][0]["functions"][0]
+
+        contributions = function["contributions"]
+
+        self.assertEqual(
+            contributions[0]["type"],
+            "if",
+        )
+
+        self.assertEqual(
+            contributions[0]["nesting"],
+            0,
+        )
+
+        self.assertEqual(
+            contributions[1]["type"],
+            "if",
+        )
+
+        self.assertEqual(
+            contributions[1]["nesting"],
+            1,
+        )
+
     # =========================================================
     # LINE INFORMATION
     # =========================================================
@@ -758,4 +969,57 @@ def foo(x):
         self.assertGreaterEqual(
             function["endline"],
             function["lineno"],
+        )
+
+    def test_contribution_line_information_is_available(self):
+        path = self._create_python_file(
+            """
+def foo(x):
+    if x:
+        return 1
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        function = result["files"][0]["functions"][0]
+
+        contribution = function["contributions"][0]
+
+        self.assertIsNotNone(
+            contribution["lineno"]
+        )
+
+    # =========================================================
+    # CLASSNAME
+    # =========================================================
+
+    def test_method_contains_classname(self):
+        path = self._create_python_file(
+            """
+class Calculator:
+
+    def calculate(self, x):
+        if x:
+            return x
+"""
+        )
+
+        result = self.engine.calculate_detailed([path])
+
+        function = result["files"][0]["functions"][0]
+
+        self.assertEqual(
+            function["type"],
+            "method",
+        )
+
+        self.assertEqual(
+            function["classname"],
+            "Calculator",
+        )
+
+        self.assertEqual(
+            function["name"],
+            "calculate",
         )
