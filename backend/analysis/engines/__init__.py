@@ -1,3 +1,4 @@
+from .halstead import HalsteadEngine
 from .loc import LOCEngine
 from .cyclomatic import CyclomaticComplexityEngine
 from .cognitive import CognitiveComplexityEngine
@@ -7,6 +8,7 @@ ENGINE_REGISTRY = {
     "LOC": LOCEngine,
     "CYCLOMATIC": CyclomaticComplexityEngine,
     "COGNITIVE": CognitiveComplexityEngine,
+    "Halstead": HalsteadEngine,
 }
 
 
