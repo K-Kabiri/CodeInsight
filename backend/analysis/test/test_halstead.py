@@ -30,10 +30,7 @@ class HalsteadEngineTest(SimpleTestCase):
 
         return path
 
-    # =========================================================
     # BASIC
-    # =========================================================
-
     def test_empty_file_has_zero_volume(self):
         path = self._create_python_file("")
 
@@ -72,10 +69,7 @@ class HalsteadEngineTest(SimpleTestCase):
             [],
         )
 
-    # =========================================================
     # RADON CONSISTENCY
-    # =========================================================
-
     def test_volume_matches_radon(self):
         source = """
 def add(a, b):
@@ -166,10 +160,7 @@ def calculate(a, b):
             expected.bugs,
         )
 
-    # =========================================================
     # FUNCTIONS
-    # =========================================================
-
     def test_functions_are_reported(self):
         source = """
 def first(a):
@@ -294,10 +285,7 @@ def add(a, b):
             expected_function.bugs,
         )
 
-    # =========================================================
     # MULTIPLE FUNCTIONS
-    # =========================================================
-
     def test_multiple_functions_have_independent_metrics(self):
         source = """
 def add(a, b):
@@ -367,10 +355,7 @@ def multiply(a, b):
                 expected_function.N2,
             )
 
-    # =========================================================
     # MULTIPLE FILES
-    # =========================================================
-
     def test_multiple_files_are_aggregated(self):
         first_source = """
 def first(a):
@@ -424,10 +409,7 @@ def second(b):
             2,
         )
 
-    # =========================================================
     # AVERAGE
-    # =========================================================
-
     def test_average_is_calculated_from_file_volumes(self):
         first_source = """
 def first(a):
@@ -480,10 +462,7 @@ def second(b):
             expected_average,
         )
 
-    # =========================================================
     # FILE INFORMATION
-    # =========================================================
-
     def test_file_path_is_reported(self):
         path = self._create_python_file(
             """
@@ -518,10 +497,7 @@ def foo(a):
             expected,
         )
 
-    # =========================================================
     # HALSTEAD COMPONENTS
-    # =========================================================
-
     def test_halstead_components_are_consistent(self):
         source = """
 def calculate(a, b):
@@ -551,10 +527,7 @@ def calculate(a, b):
             ),
         )
 
-    # =========================================================
     # CALCULATE VS DETAILED
-    # =========================================================
-
     def test_calculate_returns_detailed_total(self):
         source = """
 def foo(a, b):

@@ -32,10 +32,7 @@ class CognitiveComplexityEngineTest(SimpleTestCase):
 
         return path
 
-    # =========================================================
     # BASIC
-    # =========================================================
-
     def test_empty_file_has_zero_complexity(self):
         path = self._create_python_file("")
 
@@ -57,10 +54,7 @@ def foo():
             0,
         )
 
-    # =========================================================
     # IF / ELIF / ELSE
-    # =========================================================
-
     def test_if_adds_one(self):
         path = self._create_python_file(
             """
@@ -114,10 +108,7 @@ def foo(x):
             3,
         )
 
-    # =========================================================
     # NESTING
-    # =========================================================
-
     def test_nested_if_increases_complexity(self):
         path = self._create_python_file(
             """
@@ -171,10 +162,7 @@ def foo(a, b):
             2,
         )
 
-    # =========================================================
     # LOOPS
-    # =========================================================
-
     def test_for_adds_one(self):
         path = self._create_python_file(
             """
@@ -251,10 +239,7 @@ def foo(items):
             3,
         )
 
-    # =========================================================
     # BOOLEAN EXPRESSIONS
-    # =========================================================
-
     def test_single_boolean_sequence(self):
         path = self._create_python_file(
             """
@@ -329,10 +314,7 @@ def foo(a, b, c, d):
             3,
         )
 
-    # =========================================================
     # EXCEPTION HANDLING
-    # =========================================================
-
     def test_except_adds_one(self):
         path = self._create_python_file(
             """
@@ -387,10 +369,7 @@ def foo():
             0,
         )
 
-    # =========================================================
     # CONDITIONAL EXPRESSION
-    # =========================================================
-
     def test_ternary_adds_one(self):
         path = self._create_python_file(
             """
@@ -419,10 +398,7 @@ def foo(a, b):
             2,
         )
 
-    # =========================================================
     # BREAK / CONTINUE
-    # =========================================================
-
     def test_break_adds_one(self):
         path = self._create_python_file(
             """
@@ -459,10 +435,7 @@ def foo(items):
             4,
         )
 
-    # =========================================================
     # RECURSION
-    # =========================================================
-
     def test_recursive_call_adds_one(self):
         path = self._create_python_file(
             """
@@ -510,10 +483,7 @@ def countdown(n):
             2,
         )
 
-    # =========================================================
     # MATCH
-    # =========================================================
-
     def test_match_adds_one(self):
         path = self._create_python_file(
             """
@@ -550,10 +520,7 @@ def foo(value):
             3,
         )
 
-    # =========================================================
     # ASYNC FUNCTION
-    # =========================================================
-
     def test_async_function_is_analyzed(self):
         path = self._create_python_file(
             """
@@ -582,10 +549,7 @@ async def fetch_data(condition):
             "function",
         )
 
-    # =========================================================
     # FUNCTIONS
-    # =========================================================
-
     def test_multiple_functions_are_independent(self):
         path = self._create_python_file(
             """
@@ -672,10 +636,7 @@ def outer(x):
             1,
         )
 
-    # =========================================================
     # CLASS / METHODS
-    # =========================================================
-
     def test_class_methods_are_reported(self):
         path = self._create_python_file(
             """
@@ -724,10 +685,7 @@ class User:
                 "User",
             )
 
-    # =========================================================
     # MULTIPLE FILES
-    # =========================================================
-
     def test_multiple_files_are_aggregated(self):
         first = self._create_python_file(
             """
@@ -767,10 +725,7 @@ def second(x):
             2,
         )
 
-    # =========================================================
     # AVERAGE
-    # =========================================================
-
     def test_average_complexity(self):
         first = self._create_python_file(
             """
@@ -828,10 +783,7 @@ print(x)
             0,
         )
 
-    # =========================================================
     # DETAILED RESULT
-    # =========================================================
-
     def test_metric_name_is_returned(self):
         path = self._create_python_file(
             """
@@ -867,10 +819,7 @@ def second():
             2,
         )
 
-    # =========================================================
     # DETAILED CONTRIBUTIONS
-    # =========================================================
-
     def test_contributions_are_recorded(self):
         path = self._create_python_file(
             """
@@ -941,10 +890,7 @@ def foo(a, b):
             1,
         )
 
-    # =========================================================
     # LINE INFORMATION
-    # =========================================================
-
     def test_line_information_is_available(self):
         path = self._create_python_file(
             """
@@ -990,10 +936,7 @@ def foo(x):
             contribution["lineno"]
         )
 
-    # =========================================================
     # CLASSNAME
-    # =========================================================
-
     def test_method_contains_classname(self):
         path = self._create_python_file(
             """

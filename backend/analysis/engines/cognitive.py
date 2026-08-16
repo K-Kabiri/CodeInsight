@@ -174,10 +174,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         self._function_stack = []
         self._class_stack = []
 
-    # =========================================================
     # Context
-    # =========================================================
-
     @property
     def current_function(self):
         if not self._function_stack:
@@ -227,10 +224,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         self.functions.append(result)
 
-    # =========================================================
     # Functions
-    # =========================================================
-
     def visit_FunctionDef(self, node):
 
         context = self._create_function_context(node)
@@ -257,10 +251,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         self._finish_function(context)
 
-    # =========================================================
     # Classes
-    # =========================================================
-
     def visit_ClassDef(self, node):
 
         self._class_stack.append(node.name)
@@ -270,10 +261,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         self._class_stack.pop()
 
-    # =========================================================
     # Structural increment
-    # =========================================================
-
     def _add_structural(
             self,
             node,
@@ -295,10 +283,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             reason=reason,
         )
 
-    # =========================================================
     # IF
-    # =========================================================
-
     def visit_If(self, node):
 
         context = self.current_function
@@ -336,22 +321,13 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             else:
                 self._visit_else(node.orelse)
 
-    # =========================================================
     # ELIF
-    # =========================================================
-
     def _visit_elif(self, node):
 
         context = self.current_function
 
         if context is None:
             return
-
-        # `elif` contributes +1.
-        #
-        # It does not add another nesting level itself.
-        # However, its body is still nested relative to the
-        # surrounding control-flow structure.
 
         context.add(
             node=node,
@@ -383,10 +359,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             else:
                 self._visit_else(node.orelse)
 
-    # =========================================================
     # ELSE
-    # =========================================================
-
     def _visit_else(self, statements):
 
         context = self.current_function
@@ -396,8 +369,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         first_node = statements[0]
 
-        # `else` contributes +1 but does NOT introduce
-        # an additional nesting level.
         context.add(
             node=first_node,
             amount=1,
@@ -408,10 +379,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         for statement in statements:
             self.visit(statement)
 
-    # =========================================================
     # FOR
-    # =========================================================
-
     def visit_For(self, node):
 
         context = self.current_function
@@ -438,17 +406,11 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         for statement in node.orelse:
             self.visit(statement)
 
-    # =========================================================
     # ASYNC FOR
-    # =========================================================
-
     def visit_AsyncFor(self, node):
         self.visit_For(node)
 
-    # =========================================================
     # WHILE
-    # =========================================================
-
     def visit_While(self, node):
 
         context = self.current_function
@@ -475,10 +437,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         for statement in node.orelse:
             self.visit(statement)
 
-    # =========================================================
     # TRY
-    # =========================================================
-
     def visit_Try(self, node):
 
         context = self.current_function
@@ -486,11 +445,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         if context is None:
             self.generic_visit(node)
             return
-
-        # `try`, `else`, and `finally` do not themselves
-        # contribute complexity.
-        #
-        # Each exception handler is counted separately.
 
         for statement in node.body:
             self.visit(statement)
@@ -504,10 +458,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         for statement in node.finalbody:
             self.visit(statement)
 
-    # =========================================================
     # EXCEPT
-    # =========================================================
-
     def visit_ExceptHandler(self, node):
 
         context = self.current_function
@@ -528,10 +479,8 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
 
         context.leave_nesting()
 
-    # =========================================================
-    # TERNARY
-    # =========================================================
 
+    # TERNARY
     def visit_IfExp(self, node):
 
         context = self.current_function
@@ -539,11 +488,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         if context is None:
             self.generic_visit(node)
             return
-
-        # Ternary expressions contribute +1.
-        #
-        # Unlike a normal `if`, the ternary does NOT introduce
-        # an additional nesting level.
 
         context.add(
             node=node,
@@ -556,10 +500,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         self.visit(node.body)
         self.visit(node.orelse)
 
-    # =========================================================
     # BOOLEAN EXPRESSIONS
-    # =========================================================
-
     def visit_BoolOp(self, node):
 
         context = self.current_function
@@ -567,15 +508,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         if context is None:
             self.generic_visit(node)
             return
-
-        # Each logical operator sequence contributes +1.
-        #
-        # a and b and c
-        # -> one sequence
-        #
-        # a and b or c
-        # -> two sequences because the AST contains
-        #    nested BoolOp nodes.
 
         context.add(
             node=node,
@@ -587,10 +519,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         for value in node.values:
             self.visit(value)
 
-    # =========================================================
     # BREAK
-    # =========================================================
-
     def visit_Break(self, node):
 
         context = self.current_function
@@ -605,10 +534,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             reason="break in linear flow",
         )
 
-    # =========================================================
     # CONTINUE
-    # =========================================================
-
     def visit_Continue(self, node):
 
         context = self.current_function
@@ -623,10 +549,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             reason="break in linear flow",
         )
 
-    # =========================================================
     # MATCH
-    # =========================================================
-
     def visit_Match(self, node):
 
         context = self.current_function
@@ -634,9 +557,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         if context is None:
             self.generic_visit(node)
             return
-
-        # Python `match` is treated as a switch-like
-        # multi-way branching structure.
 
         self._add_structural(
             node,
@@ -660,10 +580,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         if context is None:
             return
 
-        # Cases themselves do not contribute.
-        #
-        # A guarded case introduces an additional condition.
-
         if case.guard is not None:
 
             self._add_structural(
@@ -677,10 +593,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         for statement in case.body:
             self.visit(statement)
 
-    # =========================================================
     # RECURSION
-    # =========================================================
-
     def visit_Call(self, node):
 
         context = self.current_function
@@ -700,7 +613,6 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
                 reason="recursive call",
             )
 
-        # Normal method/function calls are free.
         self.generic_visit(node)
 
     @staticmethod

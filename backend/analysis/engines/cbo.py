@@ -64,10 +64,7 @@ class CBOEngine(BaseMetricEngine):
             "files": files,
         }
 
-    # =========================================================
     # Class discovery
-    # =========================================================
-
     @staticmethod
     def _collect_classes(
             python_files: list[Path],
@@ -94,10 +91,7 @@ class CBOEngine(BaseMetricEngine):
 
         return classes
 
-    # =========================================================
     # File analysis
-    # =========================================================
-
     @staticmethod
     def _analyze_file(
             file_path: Path,
@@ -178,10 +172,7 @@ class _CBOVisitor(ast.NodeVisitor):
 
         return self._class_stack[-1]
 
-    # =========================================================
     # Class
-    # =========================================================
-
     def visit_ClassDef(self, node):
 
         context = _CBOContext(
@@ -196,24 +187,15 @@ class _CBOVisitor(ast.NodeVisitor):
 
         self._class_stack.append(context)
 
-        # -----------------------------------------------------
         # Inheritance
-        # -----------------------------------------------------
-
         for base in node.bases:
             self._check_reference(base)
 
-        # -----------------------------------------------------
         # Decorators
-        # -----------------------------------------------------
-
         for decorator in node.decorator_list:
             self._check_reference(decorator)
 
-        # -----------------------------------------------------
         # Class body
-        # -----------------------------------------------------
-
         for statement in node.body:
             self.visit(statement)
 
@@ -231,10 +213,7 @@ class _CBOVisitor(ast.NodeVisitor):
             }
         )
 
-    # =========================================================
     # Function definitions
-    # =========================================================
-
     def visit_FunctionDef(self, node):
 
         if self.current_class is None:
@@ -274,10 +253,7 @@ class _CBOVisitor(ast.NodeVisitor):
     def visit_AsyncFunctionDef(self, node):
         self.visit_FunctionDef(node)
 
-    # =========================================================
     # Object creation
-    # =========================================================
-
     def visit_Call(self, node):
 
         if self.current_class is None:
@@ -294,10 +270,7 @@ class _CBOVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    # =========================================================
     # Attribute access
-    # =========================================================
-
     def visit_Attribute(self, node):
 
         if self.current_class is None:
@@ -314,10 +287,7 @@ class _CBOVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    # =========================================================
     # Annotations
-    # =========================================================
-
     def visit_AnnAssign(self, node):
 
         if node.annotation:
@@ -327,10 +297,7 @@ class _CBOVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    # =========================================================
     # Name
-    # =========================================================
-
     def visit_Name(self, node):
 
         if self.current_class is None:
@@ -338,10 +305,7 @@ class _CBOVisitor(ast.NodeVisitor):
 
         self._add_if_class(node.id)
 
-    # =========================================================
     # Reference resolution
-    # =========================================================
-
     def _check_reference(self, node):
 
         class_name = self._extract_class_name(
@@ -363,10 +327,7 @@ class _CBOVisitor(ast.NodeVisitor):
                 class_name
             )
 
-    # =========================================================
     # AST name extraction
-    # =========================================================
-
     @staticmethod
     def _extract_class_name(node):
 

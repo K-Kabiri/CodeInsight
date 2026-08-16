@@ -72,12 +72,6 @@ class HalsteadEngine(BaseMetricEngine):
         result = h_visit(source_code)
         total = result.total
 
-        # Radon's HalsteadReport exposes the primitive
-        # Halstead counts h1, h2, N1 and N2.
-        #
-        # vocabulary = h1 + h2
-        # length = N1 + N2
-
         vocabulary = total.h1 + total.h2
         length = total.N1 + total.N2
 
