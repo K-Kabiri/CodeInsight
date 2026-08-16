@@ -12,7 +12,6 @@ class CBOEngineTest(SimpleTestCase):
             self,
             source: str,
     ) -> Path:
-
         file = tempfile.NamedTemporaryFile(
             suffix=".py",
             delete=False,
@@ -25,12 +24,8 @@ class CBOEngineTest(SimpleTestCase):
 
         return Path(file.name)
 
-    # =========================================================
     # No coupling
-    # =========================================================
-
     def test_class_without_coupling(self):
-
         file = self._create_file(
             """
 class User:
@@ -49,12 +44,8 @@ class User:
             0,
         )
 
-    # =========================================================
     # Instantiation
-    # =========================================================
-
     def test_instantiation_creates_coupling(self):
-
         file = self._create_file(
             """
 class User:
@@ -89,12 +80,8 @@ class UserService:
             ["User"],
         )
 
-    # =========================================================
     # Multiple references count once
-    # =========================================================
-
     def test_multiple_references_count_once(self):
-
         file = self._create_file(
             """
 class User:
@@ -126,12 +113,8 @@ class UserService:
             1,
         )
 
-    # =========================================================
     # Multiple coupled classes
-    # =========================================================
-
     def test_multiple_classes(self):
-
         file = self._create_file(
             """
 class User:
@@ -175,12 +158,8 @@ class UserService:
             ],
         )
 
-    # =========================================================
     # Inheritance
-    # =========================================================
-
     def test_inheritance_creates_coupling(self):
-
         file = self._create_file(
             """
 class User:
@@ -212,12 +191,8 @@ class Admin(User):
             ["User"],
         )
 
-    # =========================================================
     # Type annotation
-    # =========================================================
-
     def test_type_annotation_creates_coupling(self):
-
         file = self._create_file(
             """
 class User:
@@ -249,12 +224,8 @@ class UserService:
             1,
         )
 
-    # =========================================================
     # Non-class names do not create coupling
-    # =========================================================
-
     def test_non_class_names_are_ignored(self):
-
         file = self._create_file(
             """
 class UserService:
