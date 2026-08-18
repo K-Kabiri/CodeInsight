@@ -20,18 +20,26 @@ class DITEngine(BaseMetricEngine):
     project-local inheritance chain.
     """
 
-    def calculate(self, python_files: list[Path]) -> int:
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> int:
         """
         Calculate the total DIT across all classes.
         """
 
-        result = self.calculate_detailed(python_files)
+        result = self.calculate_detailed(
+            python_files,
+            scope,
+        )
 
         return result["total"]
 
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
 
         class_map = self._collect_classes(
