@@ -7,20 +7,28 @@ from .base import BaseMetricEngine
 
 class CyclomaticComplexityEngine(BaseMetricEngine):
 
-    def calculate(self, python_files: list[Path]) -> int:
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> int:
         """
         Calculate the total Cyclomatic Complexity of all Python files.
 
         Radon's default Cyclomatic Complexity starts each analyzed
         block with a base complexity of 1.
         """
-        result = self.calculate_detailed(python_files)
+        result = self.calculate_detailed(
+            python_files,
+            scope,
+        )
 
         return result["total"]
 
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
         """
         Calculate Cyclomatic Complexity with file-level and

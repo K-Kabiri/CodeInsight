@@ -42,19 +42,27 @@ class LOCFileMetrics:
 
 class LOCEngine(BaseMetricEngine):
 
-    def calculate(self, python_files: list[Path]) -> int:
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> int:
         """
         Return the total physical LOC across all Python files.
 
         LOC follows Radon's raw metric definition.
         """
-        result = self.calculate_detailed(python_files)
+        result = self.calculate_detailed(
+            python_files,
+            scope,
+        )
 
         return result["totals"]["loc"]
 
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
         """
         Calculate all Radon raw metrics.

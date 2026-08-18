@@ -22,6 +22,11 @@ class LoaderTest(SimpleTestCase):
 
             loader = PythonLoader(python_file)
 
+            self.assertEqual(
+                loader.scope,
+                "single_file",
+            )
+
             files = loader.load()
 
             self.assertEqual(len(files), 1)
@@ -72,6 +77,11 @@ class LoaderTest(SimpleTestCase):
 
             loader = ZipLoader(zip_path)
 
+            self.assertEqual(
+                loader.scope,
+                "project",
+            )
+
             files = loader.load()
 
             self.assertEqual(len(files), 2)
@@ -81,6 +91,29 @@ class LoaderTest(SimpleTestCase):
             self.assertEqual(
                 file_names,
                 {"main.py", "utils.py"},
+            )
+
+    def test_one_file_zip_is_project_scope(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            zip_path = Path(temp_dir) / "single.zip"
+
+            with zipfile.ZipFile(zip_path, "w") as zip_file:
+                zip_file.writestr(
+                    "main.py",
+                    "print('hello')\n",
+                )
+
+            loader = ZipLoader(zip_path)
+
+            self.assertEqual(
+                loader.scope,
+                "project",
+            )
+
+            self.assertEqual(
+                len(loader.load()),
+                1,
             )
 
     def test_loader_factory_for_python_file(self):

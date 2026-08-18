@@ -106,15 +106,26 @@ class AnalysisService:
         try:
             loader = get_loader(source_file.path)
 
+            scope = loader.scope
+
             python_files = loader.load()
 
             engine = get_engine(
                 analysis_metric.metric.name
             )
 
-            value = engine.calculate(python_files)
+            value = engine.calculate(
+                python_files,
+                scope=scope,
+            )
 
             analysis_metric.value = value
+            analysis_metric.detail = (
+                engine.calculate_detailed(
+                    python_files,
+                    scope=scope,
+                )
+            )
             analysis_metric.status = (
                 AnalysisMetric.Status.COMPLETED
             )
@@ -126,6 +137,7 @@ class AnalysisService:
                 AnalysisMetric.Status.FAILED
             )
             analysis_metric.value = None
+            analysis_metric.detail = None
             analysis_metric.error_message = str(exc)
 
             return False
@@ -139,6 +151,7 @@ class AnalysisService:
                 update_fields=[
                     "status",
                     "value",
+                    "detail",
                     "execution_time",
                     "error_message",
                 ]

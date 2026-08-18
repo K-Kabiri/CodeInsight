@@ -25,13 +25,18 @@ class LCOMEngine(BaseMetricEngine):
     (accessed through self) are considered.
     """
 
-    def calculate(self, python_files: list[Path]) -> int:
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> int:
         """
         Calculate total LCOM across all classes.
         """
 
         result = self.calculate_detailed(
-            python_files
+            python_files,
+            scope,
         )
 
         return result["total"]
@@ -39,6 +44,7 @@ class LCOMEngine(BaseMetricEngine):
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
         """
         Calculate LCOM for every class.

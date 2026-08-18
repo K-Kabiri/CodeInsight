@@ -2,6 +2,11 @@ from .halstead import HalsteadEngine
 from .loc import LOCEngine
 from .cyclomatic import CyclomaticComplexityEngine
 from .cognitive import CognitiveComplexityEngine
+from .cbo import CBOEngine
+from .lcom import LCOMEngine
+from .dit import DITEngine
+from .instability import InstabilityEngine
+from .cyclic import CyclicDependenciesEngine
 
 
 ENGINE_REGISTRY = {
@@ -9,6 +14,11 @@ ENGINE_REGISTRY = {
     "CYCLOMATIC": CyclomaticComplexityEngine,
     "COGNITIVE": CognitiveComplexityEngine,
     "Halstead": HalsteadEngine,
+    "CBO": CBOEngine,
+    "LCOM": LCOMEngine,
+    "DIT": DITEngine,
+    "INSTABILITY": InstabilityEngine,
+    "CYCLIC": CyclicDependenciesEngine,
 }
 
 

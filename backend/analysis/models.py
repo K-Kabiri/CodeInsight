@@ -131,6 +131,11 @@ class AnalysisMetric(models.Model):
         blank=True
     )
 
+    detail = models.JSONField(
+        null=True,
+        blank=True
+    )
+
     execution_time = models.FloatField(
         null=True,
         blank=True

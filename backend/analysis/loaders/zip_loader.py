@@ -21,6 +21,8 @@ IGNORED_DIRECTORIES = {
 
 class ZipLoader(BaseLoader):
 
+    scope = "project"
+
     def __init__(self, zip_path):
         self.zip_path = Path(zip_path)
 

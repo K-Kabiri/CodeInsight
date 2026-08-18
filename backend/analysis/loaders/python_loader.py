@@ -5,6 +5,8 @@ from .base import BaseLoader
 
 class PythonLoader(BaseLoader):
 
+    scope = "single_file"
+
     def __init__(self, file_path):
         self.file_path = Path(file_path)
 

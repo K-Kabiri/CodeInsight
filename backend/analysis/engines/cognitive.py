@@ -43,12 +43,20 @@ class CognitiveComplexityEngine(BaseMetricEngine):
     and AI layers can explain how the final score was produced.
     """
 
-    def calculate(self, python_files: list[Path]) -> int:
-        return self.calculate_detailed(python_files)["total"]
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> int:
+        return self.calculate_detailed(
+            python_files,
+            scope,
+        )["total"]
 
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
 
         files = []

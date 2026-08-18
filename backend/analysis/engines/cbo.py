@@ -18,14 +18,22 @@ class CBOEngine(BaseMetricEngine):
     coupling.
     """
 
-    def calculate(self, python_files: list[Path]) -> int:
-        result = self.calculate_detailed(python_files)
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> int:
+        result = self.calculate_detailed(
+            python_files,
+            scope,
+        )
 
         return result["total"]
 
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
 
         class_index = self._collect_classes(
@@ -141,7 +149,6 @@ class _CBOContext:
             self,
             class_name: str,
     ) -> None:
-
         if class_name != self.name:
             self.coupled_classes.add(
                 class_name
