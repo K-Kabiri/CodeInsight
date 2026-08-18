@@ -7,20 +7,28 @@ from .base import BaseMetricEngine
 
 class HalsteadEngine(BaseMetricEngine):
 
-    def calculate(self, python_files: list[Path]) -> float:
+    def calculate(
+            self,
+            python_files: list[Path],
+            scope: str | None = None,
+    ) -> float:
         """
         Calculate the total Halstead Volume across all Python files.
 
         Halstead metrics are calculated using Radon's
         Halstead analysis implementation.
         """
-        result = self.calculate_detailed(python_files)
+        result = self.calculate_detailed(
+            python_files,
+            scope,
+        )
 
         return result["total"]
 
     def calculate_detailed(
             self,
             python_files: list[Path],
+            scope: str | None = None,
     ) -> dict:
         """
         Calculate Halstead metrics for all Python files.
