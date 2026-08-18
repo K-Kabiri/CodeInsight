@@ -80,13 +80,8 @@ hello()
                 ),
             )
 
-        metric = MetricDefinition.objects.create(
+        metric = MetricDefinition.objects.get(
             name="LOC",
-            display_name="Lines of Code",
-            category="Complexity & Size",
-            description="Source lines of code",
-            unit="lines",
-            higher_is_better=False,
         )
 
         analysis = Analysis.objects.create(
@@ -253,10 +248,8 @@ hello()
                 ),
             )
 
-        metric = MetricDefinition.objects.create(
+        metric = MetricDefinition.objects.get(
             name="LOC",
-            display_name="Lines of Code",
-            category="Complexity & Size",
         )
 
         analysis = Analysis.objects.create(
@@ -497,6 +490,282 @@ hello()
             [],
         )
 
+    def test_cbo_analysis_on_zip_project(self):
+        user = User.objects.create_user(
+            username="testuser8",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".zip",
+            delete=False,
+        )
+
+        with zipfile.ZipFile(
+                analysis_file.name,
+                "w",
+        ) as zip_file:
+            zip_file.writestr(
+                "a.py",
+                "class A:\n    pass\n",
+            )
+            zip_file.writestr(
+                "b.py",
+                "from a import A\n"
+                "\n"
+                "class B:\n"
+                "    def use(self):\n"
+                "        return A()\n",
+            )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="project.zip",
+                ),
+            )
+
+        metric = MetricDefinition.objects.get(
+            name="CBO",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=metric,
+            selected=True,
+        )
+
+        AnalysisService.run(analysis)
+
+        analysis_metric = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=metric,
+        )
+
+        self.assertEqual(
+            analysis_metric.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        # Only B references A: total CBO = 1
+        self.assertEqual(
+            analysis_metric.value,
+            1,
+        )
+
+        detail = analysis_metric.detail
+
+        self.assertEqual(
+            detail["metric"],
+            "CBO",
+        )
+
+        self.assertEqual(
+            detail["total"],
+            1,
+        )
+
+        self.assertEqual(
+            len(detail["files"]),
+            2,
+        )
+
+    def test_lcom_analysis_on_zip_project(self):
+        user = User.objects.create_user(
+            username="testuser9",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".zip",
+            delete=False,
+        )
+
+        with zipfile.ZipFile(
+                analysis_file.name,
+                "w",
+        ) as zip_file:
+            zip_file.writestr(
+                "calc.py",
+                "class Calculator:\n"
+                "    def add(self):\n"
+                "        self.total = 1\n"
+                "\n"
+                "    def subtract(self):\n"
+                "        self.other = 2\n",
+            )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="project.zip",
+                ),
+            )
+
+        metric = MetricDefinition.objects.get(
+            name="LCOM",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=metric,
+            selected=True,
+        )
+
+        AnalysisService.run(analysis)
+
+        analysis_metric = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=metric,
+        )
+
+        self.assertEqual(
+            analysis_metric.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        # One method pair (add, subtract) sharing no attribute:
+        # P = 1, Q = 0, LCOM = max(1 - 0, 0) = 1
+        self.assertEqual(
+            analysis_metric.value,
+            1,
+        )
+
+        detail = analysis_metric.detail
+
+        self.assertEqual(
+            detail["metric"],
+            "LCOM",
+        )
+
+        self.assertEqual(
+            detail["total"],
+            1,
+        )
+
+        self.assertEqual(
+            len(detail["files"]),
+            1,
+        )
+
+    def test_dit_analysis_on_zip_project(self):
+        user = User.objects.create_user(
+            username="testuser10",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".zip",
+            delete=False,
+        )
+
+        with zipfile.ZipFile(
+                analysis_file.name,
+                "w",
+        ) as zip_file:
+            zip_file.writestr(
+                "animals.py",
+                "class Animal:\n"
+                "    pass\n"
+                "\n"
+                "class Dog(Animal):\n"
+                "    pass\n",
+            )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="project.zip",
+                ),
+            )
+
+        metric = MetricDefinition.objects.get(
+            name="DIT",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=metric,
+            selected=True,
+        )
+
+        AnalysisService.run(analysis)
+
+        analysis_metric = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=metric,
+        )
+
+        self.assertEqual(
+            analysis_metric.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        # DIT(Animal) = 0, DIT(Dog) = 1: total DIT = 1
+        self.assertEqual(
+            analysis_metric.value,
+            1,
+        )
+
+        detail = analysis_metric.detail
+
+        self.assertEqual(
+            detail["metric"],
+            "DIT",
+        )
+
+        self.assertEqual(
+            detail["total"],
+            1,
+        )
+
+        self.assertEqual(
+            detail["max"],
+            1,
+        )
+
     def test_analysis_fails_when_no_metric_is_selected(self):
         user = User.objects.create_user(
             username="testuser2",
@@ -529,10 +798,8 @@ hello()
                 ),
             )
 
-        metric = MetricDefinition.objects.create(
+        metric = MetricDefinition.objects.get(
             name="LOC",
-            display_name="Lines of Code",
-            category="Complexity & Size",
         )
 
         analysis = Analysis.objects.create(
@@ -592,13 +859,8 @@ hello()
                 ),
             )
 
-        metric = MetricDefinition.objects.create(
+        metric = MetricDefinition.objects.get(
             name="LOC",
-            display_name="Lines of Code",
-            category="Complexity & Size",
-            description="Source lines of code",
-            unit="lines",
-            higher_is_better=False,
         )
 
         analysis = Analysis.objects.create(
@@ -645,13 +907,8 @@ hello()
                 ),
             )
 
-        loc_metric = MetricDefinition.objects.create(
+        loc_metric = MetricDefinition.objects.get(
             name="LOC",
-            display_name="Lines of Code",
-            category="Complexity & Size",
-            description="Source lines of code",
-            unit="lines",
-            higher_is_better=False,
         )
 
         cyclic_metric = MetricDefinition.objects.get(
