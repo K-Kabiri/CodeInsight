@@ -7,6 +7,7 @@ from .lcom import LCOMEngine
 from .dit import DITEngine
 from .instability import InstabilityEngine
 from .cyclic import CyclicDependenciesEngine
+from .violations import RuleViolationsEngine
 
 
 ENGINE_REGISTRY = {
@@ -19,6 +20,7 @@ ENGINE_REGISTRY = {
     "DIT": DITEngine,
     "INSTABILITY": InstabilityEngine,
     "CYCLIC": CyclicDependenciesEngine,
+    "VIOLATIONS": RuleViolationsEngine,
 }
 
 
