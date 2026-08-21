@@ -8,6 +8,8 @@ from .dit import DITEngine
 from .instability import InstabilityEngine
 from .cyclic import CyclicDependenciesEngine
 from .violations import RuleViolationsEngine
+from .code_smells import CodeSmellsEngine
+from .duplication import DuplicationEngine
 
 
 ENGINE_REGISTRY = {
@@ -21,6 +23,8 @@ ENGINE_REGISTRY = {
     "INSTABILITY": InstabilityEngine,
     "CYCLIC": CyclicDependenciesEngine,
     "VIOLATIONS": RuleViolationsEngine,
+    "CODE_SMELLS": CodeSmellsEngine,
+    "DUPLICATION": DuplicationEngine,
 }
 
 
