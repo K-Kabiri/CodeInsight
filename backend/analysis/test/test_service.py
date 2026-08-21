@@ -976,3 +976,460 @@ hello()
         self.assertTrue(
             cyclic_result.detail["reason"],
         )
+
+    def test_code_smells_analysis_on_zip_project(self):
+        user = User.objects.create_user(
+            username="testuser11",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".zip",
+            delete=False,
+        )
+
+        long_method = (
+            "def long():\n"
+            + "".join(
+                f"    x{i} = 0\n"
+                for i in range(31)
+            )
+        )
+
+        with zipfile.ZipFile(
+                analysis_file.name,
+                "w",
+        ) as zip_file:
+            zip_file.writestr(
+                "module.py",
+                long_method,
+            )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="project.zip",
+                ),
+            )
+
+        metric = MetricDefinition.objects.get(
+            name="CODE_SMELLS",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=metric,
+            selected=True,
+        )
+
+        AnalysisService.run(analysis)
+
+        analysis.refresh_from_db()
+        analysis_metric = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=metric,
+        )
+
+        self.assertEqual(
+            analysis.status,
+            Analysis.Status.COMPLETED,
+        )
+
+        self.assertEqual(
+            analysis_metric.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        self.assertEqual(
+            analysis_metric.value,
+            1,
+        )
+
+        detail = analysis_metric.detail
+
+        self.assertEqual(
+            detail["scope"],
+            "project",
+        )
+
+        self.assertEqual(
+            detail["completeness"],
+            "full",
+        )
+
+        self.assertEqual(
+            detail["by_type"],
+            {
+                "long-method": 1,
+            },
+        )
+
+        self.assertTrue(
+            detail["files"][0]["file"].endswith("module.py"),
+        )
+
+        self.assertTrue(
+            detail["files"][0]["parsed"],
+        )
+
+    def test_violations_analysis_on_zip_project(self):
+        user = User.objects.create_user(
+            username="testuser12",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".zip",
+            delete=False,
+        )
+
+        with zipfile.ZipFile(
+                analysis_file.name,
+                "w",
+        ) as zip_file:
+            zip_file.writestr(
+                "main.py",
+                "import os\n"
+                "print(os.path)\n",
+            )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="project.zip",
+                ),
+            )
+
+        metric = MetricDefinition.objects.get(
+            name="VIOLATIONS",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=metric,
+            selected=True,
+        )
+
+        ruff_output = (
+            '[{"code": "F401", "severity": "error", '
+            '"filename": "main.py", "location": {"row": 1}}]'
+        )
+
+        bandit_output = (
+            '{"results": [{"test_id": "B110", '
+            '"issue_severity": "LOW", "filename": "main.py", '
+            '"line_number": 1}]}'
+        )
+
+        with mock.patch(
+                "analysis.engines.violations._run_ruff",
+                return_value=ruff_output,
+        ), mock.patch(
+                "analysis.engines.violations._run_bandit",
+                return_value=bandit_output,
+        ):
+            AnalysisService.run(analysis)
+
+        analysis.refresh_from_db()
+        analysis_metric = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=metric,
+        )
+
+        self.assertEqual(
+            analysis.status,
+            Analysis.Status.COMPLETED,
+        )
+
+        self.assertEqual(
+            analysis_metric.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        self.assertEqual(
+            analysis_metric.value,
+            2,
+        )
+
+        detail = analysis_metric.detail
+
+        self.assertEqual(
+            detail["scope"],
+            "project",
+        )
+
+        self.assertEqual(
+            detail["completeness"],
+            "full",
+        )
+
+        self.assertEqual(
+            detail["totals"]["violations"],
+            2,
+        )
+
+        self.assertEqual(
+            detail["by_rule"],
+            {
+                "B110": 1,
+                "F401": 1,
+            },
+        )
+
+        self.assertEqual(
+            detail["totals"]["rules"],
+            2,
+        )
+
+    def test_duplication_analysis_on_zip_project(self):
+        user = User.objects.create_user(
+            username="testuser13",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".zip",
+            delete=False,
+        )
+
+        duplicated_function = (
+            "def dup():\n"
+            + "".join(
+                f"    v{i} = 0\n"
+                for i in range(28)
+            )
+            + "    return v0\n"
+        )
+
+        with zipfile.ZipFile(
+                analysis_file.name,
+                "w",
+        ) as zip_file:
+            zip_file.writestr(
+                "a.py",
+                duplicated_function,
+            )
+            zip_file.writestr(
+                "b.py",
+                duplicated_function,
+            )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="project.zip",
+                ),
+            )
+
+        metric = MetricDefinition.objects.get(
+            name="DUPLICATION",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=metric,
+            selected=True,
+        )
+
+        AnalysisService.run(analysis)
+
+        analysis.refresh_from_db()
+        analysis_metric = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=metric,
+        )
+
+        self.assertEqual(
+            analysis.status,
+            Analysis.Status.COMPLETED,
+        )
+
+        self.assertEqual(
+            analysis_metric.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        self.assertAlmostEqual(
+            analysis_metric.value,
+            100.0,
+        )
+
+        detail = analysis_metric.detail
+
+        self.assertEqual(
+            detail["scope"],
+            "project",
+        )
+
+        self.assertEqual(
+            detail["completeness"],
+            "full",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            detail["duplicated_lines"],
+            60,
+        )
+
+        self.assertEqual(
+            len(detail["blocks"]),
+            2,
+        )
+
+    def test_duplication_single_file_is_not_applicable(self):
+        user = User.objects.create_user(
+            username="testuser14",
+            password="testpass",
+        )
+
+        project = Project.objects.create(
+            owner=user,
+            name="Test Project",
+        )
+
+        analysis_file = tempfile.NamedTemporaryFile(
+            suffix=".py",
+            delete=False,
+        )
+
+        duplicated_function = (
+            "def dup():\n"
+            + "".join(
+                f"    v{i} = 0\n"
+                for i in range(28)
+            )
+            + "    return v0\n"
+        )
+
+        analysis_file.write(
+            duplicated_function.encode("utf-8")
+        )
+
+        analysis_file.close()
+
+        with open(analysis_file.name, "rb") as file:
+            project_version = ProjectVersion.objects.create(
+                project=project,
+                version_number=1,
+                source_file=File(
+                    file,
+                    name="single.py",
+                ),
+            )
+
+        loc_metric = MetricDefinition.objects.get(
+            name="LOC",
+        )
+
+        duplication_metric = MetricDefinition.objects.get(
+            name="DUPLICATION",
+        )
+
+        analysis = Analysis.objects.create(
+            project_version=project_version,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=loc_metric,
+            selected=True,
+        )
+
+        AnalysisMetric.objects.create(
+            analysis=analysis,
+            metric=duplication_metric,
+            selected=True,
+        )
+
+        AnalysisService.run(analysis)
+
+        analysis.refresh_from_db()
+
+        self.assertEqual(
+            analysis.status,
+            Analysis.Status.COMPLETED,
+        )
+
+        loc_result = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=loc_metric,
+        )
+
+        self.assertEqual(
+            loc_result.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        self.assertIsNotNone(
+            loc_result.value,
+        )
+
+        duplication_result = AnalysisMetric.objects.get(
+            analysis=analysis,
+            metric=duplication_metric,
+        )
+
+        self.assertEqual(
+            duplication_result.status,
+            AnalysisMetric.Status.COMPLETED,
+        )
+
+        self.assertIsNone(
+            duplication_result.value,
+        )
+
+        self.assertEqual(
+            duplication_result.detail["completeness"],
+            "not_applicable",
+        )
+
+        self.assertTrue(
+            duplication_result.detail["reason"],
+        )
