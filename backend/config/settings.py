@@ -124,6 +124,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Media files (user-uploaded source files)
+# Without an explicit MEDIA_ROOT, Django defaults to "" and saves uploads
+# relative to the current working directory, which pollutes the app
+# directory / repo root every time a file is uploaded (or a test writes
+# a FileField). Pin it to a dedicated directory under BASE_DIR instead.
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
