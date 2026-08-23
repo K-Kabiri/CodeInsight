@@ -94,7 +94,7 @@ class CodeSmellsEngine(BaseMetricEngine):
     """
     Code Smells: 10 curated structural smells detected via the
     standard-library `ast` (and `tokenize` for the comment-based
-    rule) per the research note in `docs/code-smells.md` — each rule
+    rule) per the research note in `docs/Code Smells.md` — each rule
     documented against Clean Code / an official reference.
 
     Rules and thresholds (configurable constants):
@@ -136,7 +136,7 @@ class CodeSmellsEngine(BaseMetricEngine):
     rule is whole-analyzed-file-set by nature: at `single_file`
     scope a function may be used by files outside the analysis, so
     its findings are a best-effort signal of that scope (documented
-    in `docs/code-smells.md`), never a claim about unanalyzed files.
+    in `docs/Code Smells.md`), never a claim about unanalyzed files.
     """
 
     MAX_METHOD_LINES = 30

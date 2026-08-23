@@ -19,7 +19,7 @@ def seed_code_smells(apps, schema_editor):
                 "Parameter List (> 5), Data Class (>= 3 fields, no "
                 "methods), Magic Number, Bare Except, and Empty "
                 "Block — each documented against Clean Code or an "
-                "official reference (see docs/code-smells.md). The "
+                "official reference (see docs/Code Smells.md). The "
                 "scalar value is the total number of smells; the "
                 "detail reports per-smell-type and per-file counts "
                 "with locations. Applicable at any scope."
