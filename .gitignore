@@ -2,10 +2,8 @@
 .venv/
 __pycache__/
 *.pyc
-
 .agents/*
-
-# User-uploaded source files (Django MEDIA_ROOT, plus the old
-# CWD-relative projects/ dump that polluted the repo root)
 media/
 /projects/
+*.sqlite3
+.idea/

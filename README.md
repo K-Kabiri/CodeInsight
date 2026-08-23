@@ -1,46 +1,26 @@
-`\# CodeInsight
-
-
+# CodeInsight
 
 AI-powered Code Quality Analysis Platform
 
+## Tech Stack
 
+**Backend:**
 
-\## Tech Stack
+- Django
+- Django REST Framework
+- PostgreSQL
 
+**Frontend:**
 
+- React
+- Material UI
 
-Backend:
+**Analysis:**
 
-\- Django
+- Radon
+- Ruff
+- Bandit
 
-\- Django REST Framework
+**AI:**
 
-\- PostgreSQL
-
-
-
-Frontend:
-
-\- React
-
-\- Material UI
-
-
-
-Analysis:
-
-\- Radon
-
-\- Pylint
-
-\- Bandit
-
-\- GitPython
-
-
-
-AI:
-
-\- LLM Report Generator
-
+- LLM Report Generator
