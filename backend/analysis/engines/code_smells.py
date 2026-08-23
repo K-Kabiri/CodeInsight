@@ -1,4 +1,7 @@
 import ast
+import io
+import textwrap
+import tokenize
 from pathlib import Path
 
 from .base import BaseMetricEngine
@@ -71,37 +74,28 @@ def _block_bodies(statement) -> list[list[ast.stmt]]:
     return []
 
 
-def _is_common_constant(value) -> bool:
+class _Located:
     """
-    The exclusion list of the Magic Number rule: 0, 1, -1, 100 and
-    powers of ten (and their float forms) are structural enough to
-    be self-explanatory.
+    Minimal stand-in for an AST node that carries only a line range,
+    used for findings that have no AST node of their own (commented
+    out code blocks).
     """
-    if isinstance(value, bool):
-        return True
 
-    if isinstance(value, int):
-        return value in (0, 1, -1, 100) or (
-            value != 0 and abs(value) in {
-                10 ** power for power in range(1, 7)
-            }
+    def __init__(self, lineno: int, end_lineno: int | None = None):
+        self.lineno = lineno
+        self.end_lineno = (
+            end_lineno
+            if end_lineno is not None
+            else lineno
         )
-
-    if isinstance(value, float):
-        return value in (0.0, 1.0, -1.0, 100.0) or any(
-            abs(value) == 10.0 ** power
-            for power in range(-6, 7)
-        )
-
-    return False
 
 
 class CodeSmellsEngine(BaseMetricEngine):
     """
-    Code Smells: 8 curated structural smells detected via the
-    standard-library `ast` (per the research note in
-    `docs/code-smells.md`, each rule documented against Clean Code /
-    an official reference).
+    Code Smells: 10 curated structural smells detected via the
+    standard-library `ast` (and `tokenize` for the comment-based
+    rule) per the research note in `docs/code-smells.md` — each rule
+    documented against Clean Code / an official reference.
 
     Rules and thresholds (configurable constants):
 
@@ -112,22 +106,37 @@ class CodeSmellsEngine(BaseMetricEngine):
       - long-parameter-list  > MAX_PARAMETERS (5) parameters
       - data-class           >= MIN_DATA_CLASS_FIELDS (3) fields
                              and no (non-dunder) methods
-      - magic-number         any bare numeric literal not in the
-                             common-constants exclusion list
       - bare-except          `except:` with no exception type
       - empty-block          a block whose body is only placeholders
                              (`pass` / `...`), optionally preceded by
                              a docstring
+      - searchable-names     a single-letter local variable or
+                             parameter (i/j/k/x/y/z/e/_ excluded)
+      - commented-out-code   comment text that parses as valid Python
+                             and carries code-like syntax
+      - dead-function        a function/method whose name is never
+                             referenced in the analyzed file set
 
     Deep-nesting depth convention (pinned in the note): the function
     body counts as level 1, a control construct directly inside it is
     level 2, and each further nested construct adds one level; the
     rule fires when the deepest construct exceeds level 4.
 
+    Every finding carries the explainable-detail entity fields:
+    `entity` (the function/method/class/identifier the finding
+    attaches to, or null), `entity_type` (function/method/class/
+    variable/parameter/except/block/…), and `class_name` (the
+    containing class for methods). Existing `type`/`lineno`/
+    `endline`/`message` fields are unchanged.
+
     Scope/completeness (ADR-0001): applicable at any Scope; every
     parsed file reports `completeness: full`. A file that fails to
     parse is reported with `completeness: partial` at file level and
-    a reason — its counts are never fabricated.
+    a reason — its counts are never fabricated. The dead-function
+    rule is whole-analyzed-file-set by nature: at `single_file`
+    scope a function may be used by files outside the analysis, so
+    its findings are a best-effort signal of that scope (documented
+    in `docs/code-smells.md`), never a claim about unanalyzed files.
     """
 
     MAX_METHOD_LINES = 30
@@ -136,6 +145,9 @@ class CodeSmellsEngine(BaseMetricEngine):
     MAX_NESTING_DEPTH = 4
     MAX_PARAMETERS = 5
     MIN_DATA_CLASS_FIELDS = 3
+    SINGLE_LETTER_EXCEPTIONS = frozenset(
+        {"i", "j", "k", "x", "y", "z", "e", "_"}
+    )
 
     def __init__(
             self,
@@ -174,8 +186,13 @@ class CodeSmellsEngine(BaseMetricEngine):
         files = []
         failed_files = []
 
+        referenced_names = self._collect_references(python_files)
+
         for file_path in python_files:
-            result = self._analyze_file(file_path)
+            result = self._analyze_file(
+                file_path,
+                referenced_names,
+            )
 
             files.append(result)
 
@@ -217,11 +234,44 @@ class CodeSmellsEngine(BaseMetricEngine):
 
         return detail
 
+    # ---- Cross-file reference collection ----
+
+    def _collect_references(
+            self,
+            python_files: list[Path],
+    ) -> set[str]:
+        """
+        Every name referenced anywhere in the analyzed file set:
+        `Name` ids (calls, callbacks, imports, entry points) and
+        `Attribute` attrs (`self.run()`, `Service.run()`). Used by
+        the dead-function rule. Definition-site names are not `Name`
+        nodes, so a definition alone never counts as a reference.
+        """
+        references = set()
+
+        for file_path in python_files:
+            try:
+                tree = ast.parse(
+                    file_path.read_text(encoding="utf-8"),
+                    filename=str(file_path),
+                )
+            except SyntaxError:
+                continue
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name):
+                    references.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    references.add(node.attr)
+
+        return references
+
     # ---- Per-file analysis ----
 
     def _analyze_file(
             self,
             file_path: Path,
+            referenced_names: set[str] | None = None,
     ) -> dict:
         source_code = file_path.read_text(encoding="utf-8")
 
@@ -238,6 +288,12 @@ class CodeSmellsEngine(BaseMetricEngine):
                 "smells": [],
             }
 
+        self._parents = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+
         smells = []
 
         for node in ast.walk(tree):
@@ -248,6 +304,13 @@ class CodeSmellsEngine(BaseMetricEngine):
                 smells.extend(self._long_method(node))
                 smells.extend(self._deep_nesting(node))
                 smells.extend(self._long_parameter_list(node))
+                smells.extend(self._searchable_names(node))
+                smells.extend(
+                    self._dead_function(
+                        node,
+                        referenced_names,
+                    )
+                )
 
             if isinstance(node, ast.ClassDef):
                 smells.extend(self._large_class(node))
@@ -257,13 +320,101 @@ class CodeSmellsEngine(BaseMetricEngine):
                 smells.extend(self._bare_except(node))
 
         smells.extend(self._empty_blocks(tree))
-        smells.extend(self._magic_numbers(tree))
+        smells.extend(self._commented_out_code(tree, source_code))
 
         return {
             "file": str(file_path),
             "parsed": True,
             "smells": smells,
         }
+
+    # ---- Entity resolution ----
+
+    def _function_entity(
+            self,
+            node,
+    ) -> tuple[str, str, str | None]:
+        """
+        Entity fields for a function/method node: a function defined
+        directly in a class body is a method (with its containing
+        class); anything else — module-level and nested functions —
+        is a plain function.
+        """
+        parent = self._parents.get(node)
+
+        if isinstance(parent, ast.ClassDef):
+            return (node.name, "method", parent.name)
+
+        return (node.name, "function", None)
+
+    def _enclosing_entity(
+            self,
+            node,
+    ) -> tuple[str | None, str | None, str | None]:
+        """
+        The nearest named entity enclosing a node (including the
+        node itself when it is a function or class): the nearest
+        function/method, else the nearest class, else (None, None,
+        None).
+        """
+        current = node
+
+        while current is not None:
+            if isinstance(
+                    current,
+                    (ast.FunctionDef, ast.AsyncFunctionDef),
+            ):
+                return self._function_entity(current)
+
+            if isinstance(current, ast.ClassDef):
+                return (current.name, "class", None)
+
+            current = self._parents.get(current)
+
+        return (None, None, None)
+
+    def _enclosing_entity_for_line(
+            self,
+            lineno: int,
+            tree,
+    ) -> tuple[str | None, str | None, str | None]:
+        """
+        The deepest function/class whose line range contains the
+        given line — used for findings that have no AST node of
+        their own (commented-out code).
+        """
+        enclosing = None
+
+        for node in ast.walk(tree):
+            if not isinstance(
+                    node,
+                    (
+                        ast.FunctionDef,
+                        ast.AsyncFunctionDef,
+                        ast.ClassDef,
+                    ),
+            ):
+                continue
+
+            end = getattr(node, "end_lineno", node.lineno)
+
+            if node.lineno <= lineno <= end:
+                if (
+                        enclosing is None
+                        or node.lineno > enclosing.lineno
+                ):
+                    enclosing = node
+
+        if enclosing is None:
+            return (None, None, None)
+
+        if isinstance(
+                enclosing,
+                (ast.FunctionDef, ast.AsyncFunctionDef),
+        ):
+            return self._function_entity(enclosing)
+
+        return (enclosing.name, "class", None)
 
     # ---- Rules ----
 
@@ -283,6 +434,8 @@ class CodeSmellsEngine(BaseMetricEngine):
         if lines <= self.max_method_lines:
             return []
 
+        entity, entity_type, class_name = self._function_entity(node)
+
         return [
             self._smell(
                 "long-method",
@@ -291,6 +444,9 @@ class CodeSmellsEngine(BaseMetricEngine):
                     f"Function body is {lines} lines "
                     f"(max {self.max_method_lines})"
                 ),
+                entity=entity,
+                entity_type=entity_type,
+                class_name=class_name,
             )
         ]
 
@@ -339,6 +495,8 @@ class CodeSmellsEngine(BaseMetricEngine):
                 "large-class",
                 node,
                 "; ".join(reasons),
+                entity=node.name,
+                entity_type="class",
             )
         ]
 
@@ -369,6 +527,8 @@ class CodeSmellsEngine(BaseMetricEngine):
         if max_level <= self.max_nesting_depth:
             return []
 
+        entity, entity_type, class_name = self._function_entity(node)
+
         return [
             self._smell(
                 "deep-nesting",
@@ -377,6 +537,9 @@ class CodeSmellsEngine(BaseMetricEngine):
                     f"Maximum nesting depth {max_level} exceeds "
                     f"{self.max_nesting_depth}"
                 ),
+                entity=entity,
+                entity_type=entity_type,
+                class_name=class_name,
             )
         ]
 
@@ -399,6 +562,8 @@ class CodeSmellsEngine(BaseMetricEngine):
         if len(parameters) <= self.max_parameters:
             return []
 
+        entity, entity_type, class_name = self._function_entity(node)
+
         return [
             self._smell(
                 "long-parameter-list",
@@ -407,6 +572,9 @@ class CodeSmellsEngine(BaseMetricEngine):
                     f"Function takes {len(parameters)} parameters "
                     f"(max {self.max_parameters})"
                 ),
+                entity=entity,
+                entity_type=entity_type,
+                class_name=class_name,
             )
         ]
 
@@ -487,6 +655,8 @@ class CodeSmellsEngine(BaseMetricEngine):
                     f"(>= {self.min_data_class_fields}) and "
                     "no methods"
                 ),
+                entity=node.name,
+                entity_type="class",
             )
         ]
 
@@ -497,27 +667,278 @@ class CodeSmellsEngine(BaseMetricEngine):
         if handler.type is not None:
             return []
 
+        entity, entity_type, class_name = self._enclosing_entity(
+            handler,
+        )
+
+        if entity is None:
+            entity_type = "except"
+
         return [
             self._smell(
                 "bare-except",
                 handler,
                 "Bare except catches every exception",
+                entity=entity,
+                entity_type=entity_type,
+                class_name=class_name,
             )
         ]
 
-    def _magic_numbers(
+    def _searchable_names(
             self,
-            tree,
+            node,
     ) -> list[dict]:
+        """
+        Searchable Names: single-letter local variables and
+        parameters are hard to search for (N4). Loop counters
+        (i/j/k), coordinates (x/y/z), exception names (e) and the
+        throwaway `_` are excluded, matching pylint's `good-names`
+        and SonarQube S117.
+        """
         smells = []
+        seen = set()
 
-        visitor = _MagicNumberVisitor(
-            self._smell,
+        def consider(
+                name: str,
+                entity_type: str,
+                location,
+        ) -> None:
+            if (
+                    name in seen
+                    or len(name) != 1
+                    or name in self.SINGLE_LETTER_EXCEPTIONS
+                    or _is_dunder(name)
+            ):
+                return
+
+            seen.add(name)
+
+            smells.append(
+                self._smell(
+                    "searchable-names",
+                    location,
+                    (
+                        f"Single-letter {entity_type} name {name!r} "
+                        "is hard to search"
+                    ),
+                    entity=name,
+                    entity_type=entity_type,
+                )
+            )
+
+        arguments = node.args
+
+        parameters = (
+            list(arguments.posonlyargs)
+            + list(arguments.args)
+            + list(arguments.kwonlyargs)
         )
 
-        visitor.visit(tree)
+        if arguments.vararg is not None:
+            parameters.append(arguments.vararg)
 
-        return visitor.smells
+        if arguments.kwarg is not None:
+            parameters.append(arguments.kwarg)
+
+        for parameter in parameters:
+            consider(
+                parameter.arg,
+                "parameter",
+                parameter,
+            )
+
+        # Local variables: store-target names and exception-handler
+        # names in this function's scope, minus the bindings of
+        # nested scopes.
+        local_names = self._scope_bindings(node)
+
+        for nested in ast.walk(node):
+            if nested is node:
+                continue
+
+            if isinstance(
+                    nested,
+                    (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+            ):
+                for name in self._scope_bindings(nested):
+                    local_names.pop(name, None)
+
+        for name, location in local_names.items():
+            consider(
+                name,
+                "variable",
+                location,
+            )
+
+        return smells
+
+    @staticmethod
+    def _scope_bindings(subtree) -> dict[str, object]:
+        """
+        The names bound in one scope: store-target `Name`s (plain
+        assignments, loop targets, `with` targets, comprehensions,
+        walrus) and `except ... as` handler names. Keyed by name
+        with the first binding node as value.
+        """
+        bindings = {}
+
+        for child in ast.walk(subtree):
+            if (
+                    isinstance(child, ast.Name)
+                    and isinstance(child.ctx, ast.Store)
+            ):
+                bindings.setdefault(child.id, child)
+
+            elif (
+                    isinstance(child, ast.ExceptHandler)
+                    and child.name
+            ):
+                bindings.setdefault(child.name, child)
+
+        return bindings
+
+    def _commented_out_code(
+            self,
+            tree,
+            source_code: str,
+    ) -> list[dict]:
+        """
+        Commented-Out Code: a run of consecutive comment lines whose
+        content parses as valid Python and carries a code-like
+        syntax signal (assignment, call, bracket, structural
+        keyword) — per SonarQube S125. Directives (`#!`, `-*-`,
+        `# type:`, `# noqa`, tool pragmas) are never flagged.
+        """
+        smells = []
+        comment_lines = []
+
+        try:
+            tokens = tokenize.generate_tokens(
+                io.StringIO(source_code).readline,
+            )
+
+            for token in tokens:
+                if token.type == tokenize.COMMENT:
+                    comment_lines.append(
+                        (token.start[0], token.string)
+                    )
+        except (tokenize.TokenError, IndentationError):
+            return smells
+
+        groups = []
+        current = []
+        previous = None
+
+        for lineno, text in comment_lines:
+            if previous is not None and lineno == previous + 1:
+                current.append((lineno, text))
+            else:
+                if current:
+                    groups.append(current)
+
+                current = [(lineno, text)]
+
+            previous = lineno
+
+        if current:
+            groups.append(current)
+
+        for group in groups:
+            lines = []
+
+            for lineno, text in group:
+                # Remove the comment marker and the single space
+                # that usually follows it, preserving the relative
+                # indentation that commented-out code keeps.
+                content = text.lstrip("#")
+
+                if content.startswith(" "):
+                    content = content[1:]
+
+                stripped = content.rstrip()
+
+                if (
+                        not stripped
+                        or self._is_comment_directive(stripped)
+                ):
+                    continue
+
+                lines.append(stripped)
+
+            if not lines:
+                continue
+
+            if not any(
+                    self._looks_like_code(line)
+                    for line in lines
+            ):
+                continue
+
+            candidate = textwrap.dedent("\n".join(lines))
+
+            try:
+                compile(
+                    candidate,
+                    "<commented-out-code>",
+                    "exec",
+                )
+            except SyntaxError:
+                continue
+
+            entity, entity_type, class_name = (
+                self._enclosing_entity_for_line(
+                    group[0][0],
+                    tree,
+                )
+            )
+
+            smells.append(
+                self._smell(
+                    "commented-out-code",
+                    _Located(group[0][0], group[-1][0]),
+                    "Commented-out code should be removed",
+                    entity=entity,
+                    entity_type=entity_type,
+                    class_name=class_name,
+                )
+            )
+
+        return smells
+
+    def _dead_function(
+            self,
+            node,
+            referenced_names: set[str] | None,
+    ) -> list[dict]:
+        """
+        Dead Function: a function/method whose name is never
+        referenced in the analyzed file set (F4). Dunders are
+        excluded; recursion, decorators, callbacks, `self.x` /
+        `ClassName.x` calls and `if __name__ == "__main__"` entry
+        points all count as references.
+        """
+        if _is_dunder(node.name):
+            return []
+
+        if (
+                referenced_names is not None
+                and node.name in referenced_names
+        ):
+            return []
+
+        entity, entity_type, class_name = self._function_entity(node)
+
+        return [
+            self._smell(
+                "dead-function",
+                node,
+                f"Function {node.name!r} is never used",
+                entity=entity,
+                entity_type=entity_type,
+                class_name=class_name,
+            )
+        ]
 
     def _empty_blocks(
             self,
@@ -567,6 +988,13 @@ class CodeSmellsEngine(BaseMetricEngine):
 
             for body in bodies:
                 if self._is_empty(body):
+                    entity, entity_type, class_name = (
+                        self._enclosing_entity(node)
+                    )
+
+                    if entity is None:
+                        entity_type = "block"
+
                     smells.append(
                         self._smell(
                             "empty-block",
@@ -575,6 +1003,9 @@ class CodeSmellsEngine(BaseMetricEngine):
                                 "Empty block: body contains only "
                                 "placeholder statements"
                             ),
+                            entity=entity,
+                            entity_type=entity_type,
+                            class_name=class_name,
                         )
                     )
 
@@ -606,6 +1037,52 @@ class CodeSmellsEngine(BaseMetricEngine):
             for statement in body
         )
 
+    @staticmethod
+    def _is_comment_directive(text: str) -> bool:
+        """
+        Comment text that is a directive, never commented-out code:
+        shebangs, coding declarations, type ignores and tool
+        pragmas.
+        """
+        text = text.lstrip()
+        lowered = text.lower()
+
+        if text.startswith("!"):
+            return True
+
+        if "-*-" in text:
+            return True
+
+        if lowered.startswith("type:"):
+            return True
+
+        if lowered.startswith(
+                ("noqa", "pragma:", "pylint:", "ruff:", "fmt:", "mypy:")
+        ):
+            return True
+
+        return False
+
+    @staticmethod
+    def _looks_like_code(text: str) -> bool:
+        text = text.lstrip()
+
+        structural_prefixes = (
+            "def ", "class ", "import ", "from ", "return ", "for ",
+            "while ", "if ", "elif ", "else:", "try:", "except ",
+            "with ", "assert ", "raise ", "del ", "pass", "break",
+            "continue", "yield ", "lambda ", "async ", "await ",
+            "print(", "global ", "nonlocal ",
+        )
+
+        if text.startswith(structural_prefixes):
+            return True
+
+        return any(
+            marker in text
+            for marker in ("=", "(", "[", "{", "@", "->")
+        )
+
     def _collect_data_field(
             self,
             target,
@@ -634,6 +1111,10 @@ class CodeSmellsEngine(BaseMetricEngine):
             smell_type: str,
             node,
             message: str,
+            *,
+            entity: str | None = None,
+            entity_type: str | None = None,
+            class_name: str | None = None,
     ) -> dict:
         return {
             "type": smell_type,
@@ -644,88 +1125,7 @@ class CodeSmellsEngine(BaseMetricEngine):
                 node.lineno,
             ),
             "message": message,
+            "entity": entity,
+            "entity_type": entity_type,
+            "class_name": class_name,
         }
-
-
-class _MagicNumberVisitor(ast.NodeVisitor):
-    """
-    Finds bare numeric literals, excluding the common-constants list
-    and structural positions (function-definition defaults and
-    arguments of dunder calls such as `super().__init__()`).
-    """
-
-    def __init__(
-            self,
-            smell_factory,
-    ):
-        self.smell_factory = smell_factory
-
-        self._parent = None
-
-        self.smells = []
-
-    def visit_Constant(self, node):
-        value = node.value
-
-        if (
-                not isinstance(value, (int, float))
-                or isinstance(value, bool)
-        ):
-            return
-
-        if _is_common_constant(value):
-            return
-
-        if self._is_structural(node):
-            return
-
-        self.smells.append(
-            self.smell_factory(
-                "magic-number",
-                node,
-                (
-                    f"Magic number {value!r} — "
-                    "use a named constant"
-                ),
-            )
-        )
-
-    def _is_structural(self, node) -> bool:
-        parent = self._parent
-
-        if parent is None:
-            return False
-
-        # Default value of a function definition:
-        #   def f(n=42): ...
-        if isinstance(parent, ast.arg):
-            return parent.default is node
-
-        # Positional/keyword default directly on `arguments`.
-        if isinstance(parent, ast.arguments):
-            return True
-
-        # Argument of a dunder call:
-        #   super().__init__(42)
-        if isinstance(parent, ast.Call):
-            func = parent.func
-
-            if (
-                    isinstance(func, ast.Attribute)
-                    and _is_dunder(func.attr)
-            ):
-                return node in parent.args or any(
-                    keyword.value is node
-                    for keyword in parent.keywords
-                )
-
-        return False
-
-    def generic_visit(self, node):
-        previous_parent = self._parent
-
-        self._parent = node
-
-        super().generic_visit(node)
-
-        self._parent = previous_parent
