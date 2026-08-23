@@ -75,6 +75,12 @@ class LCOMEngine(BaseMetricEngine):
 
         return {
             "metric": "LCOM",
+            "scope": scope,
+            # ADR-0001: LCOM1 counts only `self`-attribute pairs
+            # inside each class body, so the value is complete at any
+            # scope — the keys are still emitted because CONTEXT.md
+            # lists LCOM in the dependency-based group.
+            "completeness": "full",
             "total": total,
             "average": average,
             "class_count": len(all_scores),

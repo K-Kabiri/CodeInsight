@@ -299,3 +299,47 @@ class C(B):
             result["max"],
             2,
         )
+
+    # ADR-0001: scope/completeness
+    def test_detail_carries_scope_and_completeness(self):
+        file = self._create_file(
+            """
+class A:
+    pass
+"""
+        )
+
+        result = DITEngine().calculate_detailed(
+            [file],
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            result["scope"],
+            "single_file",
+        )
+
+        # External/unresolved parents terminate the local chain, so
+        # the reported depth is a lower bound (ADR-0001).
+        self.assertEqual(
+            result["completeness"],
+            "partial",
+        )
+
+    def test_project_scope_is_complete(self):
+        file = self._create_file(
+            """
+class A:
+    pass
+"""
+        )
+
+        result = DITEngine().calculate_detailed(
+            [file],
+            scope="project",
+        )
+
+        self.assertEqual(
+            result["completeness"],
+            "full",
+        )

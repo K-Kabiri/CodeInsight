@@ -78,6 +78,17 @@ class DITEngine(BaseMetricEngine):
 
         return {
             "metric": "DIT",
+            "scope": scope,
+            # ADR-0001: on `single_file` scope unresolved external
+            # bases terminate the local chain, so the reported depth
+            # is a lower bound — never a fabricated full depth. On
+            # `project` scope the whole analyzed set is in the class
+            # map, so the value is complete.
+            "completeness": (
+                "full"
+                if scope == "project"
+                else "partial"
+            ),
             "total": total,
             "average": average,
             "max": maximum,

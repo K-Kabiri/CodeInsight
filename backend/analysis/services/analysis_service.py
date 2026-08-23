@@ -1,6 +1,5 @@
 import time
 
-from django.db import transaction
 from django.utils import timezone
 
 from analysis.engines import get_engine
@@ -43,52 +42,81 @@ class AnalysisService:
         )
 
     @staticmethod
-    @transaction.atomic
     def _execute_analysis(
             analysis: Analysis,
             analysis_metrics,
     ) -> None:
+        """
+        Run every selected metric and settle the Analysis.
 
-        analysis.status = Analysis.Status.RUNNING
-        analysis.started_at = timezone.now()
+        Deliberately NOT wrapped in `@transaction.atomic`: each status
+        transition commits independently so a polling client observes
+        the Analysis moving PENDING -> RUNNING -> COMPLETED/FAILED
+        (api-layer spec user story 8). Per-metric failures are already
+        contained by `_run_metric` and never abort the run.
 
-        analysis.save(
-            update_fields=[
-                "status",
-                "started_at",
-            ]
+        The Input (`.py` / ZIP) is loaded exactly once and shared by
+        all metrics — a project ZIP is extracted a single time, and
+        the loader's temporary directory is cleaned up afterwards.
+        """
+
+        loader = get_loader(
+            analysis.project_version.source_file.path
         )
 
-        has_failed_metric = False
+        try:
+            python_files = loader.load()
 
-        for analysis_metric in analysis_metrics:
-            success = AnalysisService._run_metric(
-                analysis_metric,
-                analysis.project_version.source_file,
+            scope = loader.scope
+
+            analysis.status = Analysis.Status.RUNNING
+            analysis.started_at = timezone.now()
+
+            analysis.save(
+                update_fields=[
+                    "status",
+                    "started_at",
+                ]
             )
 
-            if not success:
-                has_failed_metric = True
+            has_failed_metric = False
 
-        analysis.status = (
-            Analysis.Status.FAILED
-            if has_failed_metric
-            else Analysis.Status.COMPLETED
-        )
+            for analysis_metric in analysis_metrics:
+                success = AnalysisService._run_metric(
+                    analysis_metric,
+                    python_files,
+                    scope,
+                )
 
-        analysis.finished_at = timezone.now()
+                if not success:
+                    has_failed_metric = True
 
-        analysis.save(
-            update_fields=[
-                "status",
-                "finished_at",
-            ]
-        )
+            analysis.status = (
+                Analysis.Status.FAILED
+                if has_failed_metric
+                else Analysis.Status.COMPLETED
+            )
+
+            analysis.finished_at = timezone.now()
+
+            analysis.save(
+                update_fields=[
+                    "status",
+                    "finished_at",
+                ]
+            )
+
+        finally:
+            cleanup = getattr(loader, "cleanup", None)
+
+            if cleanup is not None:
+                cleanup()
 
     @staticmethod
     def _run_metric(
             analysis_metric: AnalysisMetric,
-            source_file,
+            python_files,
+            scope: str | None,
     ) -> bool:
 
         start_time = time.perf_counter()
@@ -104,12 +132,6 @@ class AnalysisService:
         )
 
         try:
-            loader = get_loader(source_file.path)
-
-            scope = loader.scope
-
-            python_files = loader.load()
-
             engine = get_engine(
                 analysis_metric.metric.name
             )

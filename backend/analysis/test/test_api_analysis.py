@@ -9,7 +9,12 @@ from django.test import TransactionTestCase, override_settings
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient, APITestCase
 
-from analysis.models import Analysis, AnalysisMetric
+from analysis.models import (
+    Analysis,
+    AnalysisMetric,
+    MetricDefinition,
+)
+from analysis.services.analysis_service import AnalysisService
 from analysis.services.dispatcher import InlineAnalysisDispatcher
 from projects.models import Project, ProjectVersion
 
@@ -336,6 +341,21 @@ class RealThreadAnalysisTest(TransactionTestCase):
         )
         self.alice_client = _client_for(self.alice)
 
+        # TransactionTestCase flushes the whole database between
+        # tests, which also wipes the MetricDefinition rows seeded by
+        # data migrations — so re-seed the definitions the API needs.
+        MetricDefinition.objects.get_or_create(
+            name="LOC",
+            defaults={
+                "display_name": "Lines of Code",
+                "category": "Complexity & Size",
+                "description": "Source lines of code.",
+                "unit": "lines",
+                "higher_is_better": False,
+                "supports_llm": True,
+            },
+        )
+
     def tearDown(self):
         self._media_override.disable()
         shutil.rmtree(
@@ -393,3 +413,84 @@ class RealThreadAnalysisTest(TransactionTestCase):
         self.assertIsNotNone(
             response.data["metrics"][0]["value"]
         )
+
+    def test_polling_observes_running_before_completed(self):
+        """
+        api-layer user story 8: a polling client must observe the
+        Analysis moving through RUNNING to COMPLETED. The service is
+        deliberately NOT wrapped in one transaction, so the RUNNING
+        transition commits before the metrics finish. `_run_metric`
+        is slowed down to make the window observable; this pins the
+        fix for ticket 03 (backend-hardening).
+        """
+        project = Project.objects.create(
+            owner=self.alice,
+            name="Project",
+        )
+        version = ProjectVersion.objects.create(
+            project=project,
+            version_number=1,
+            source_file=SimpleUploadedFile(
+                "main.py",
+                b"def answer():\n    return 42\n",
+            ),
+        )
+
+        original_run_metric = AnalysisService._run_metric
+
+        def slow_run_metric(analysis_metric, python_files, scope):
+            time.sleep(0.4)
+            return original_run_metric(
+                analysis_metric,
+                python_files,
+                scope,
+            )
+
+        # The background thread keeps running after the create call
+        # returns, so the patch must stay active for the whole poll
+        # loop — closing it inside a `with` right after POST would
+        # remove the slowdown before the thread reaches `_run_metric`.
+        patcher = mock.patch.object(
+            AnalysisService,
+            "_run_metric",
+            side_effect=slow_run_metric,
+        )
+        patcher.start()
+
+        created = self.alice_client.post(
+            "/api/analyses/",
+            {
+                "project_version": version.id,
+                "metrics": ["LOC"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            created.status_code,
+            201,
+            created.data,
+        )
+        analysis_id = created.data["id"]
+
+        deadline = time.time() + 10
+        observed_statuses = set()
+
+        while time.time() < deadline:
+            response = self.alice_client.get(
+                f"/api/analyses/{analysis_id}/"
+            )
+            observed_statuses.add(
+                response.data["status"]
+            )
+            if response.data["status"] in (
+                "COMPLETED",
+                "FAILED",
+            ):
+                break
+            time.sleep(0.05)
+
+        patcher.stop()
+
+        self.assertIn("RUNNING", observed_statuses)
+        self.assertIn("COMPLETED", observed_statuses)
