@@ -1,10 +1,11 @@
+import shutil
 import tempfile
 import zipfile
 from unittest import mock
 
 from django.contrib.auth.models import User
 from django.core.files import File
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from analysis.models import (
     Analysis,
@@ -42,6 +43,26 @@ class _ScopeRecordingEngine:
 
 
 class AnalysisServiceTest(TestCase):
+
+    def setUp(self):
+        # Isolate uploads: without this, ProjectVersion.source_file writes
+        # land in the real MEDIA_ROOT (with random suffixed names on every
+        # run, since files from previous runs are never cleaned up) and
+        # pollute the repo. Route them to a throwaway temp dir instead.
+        self._media_root = tempfile.mkdtemp(
+            prefix="codeinsight-test-media-"
+        )
+        self._media_override = override_settings(
+            MEDIA_ROOT=self._media_root
+        )
+        self._media_override.enable()
+
+    def tearDown(self):
+        self._media_override.disable()
+        shutil.rmtree(
+            self._media_root,
+            ignore_errors=True,
+        )
 
     def test_loc_analysis(self):
         user = User.objects.create_user(
@@ -999,6 +1020,7 @@ hello()
                 f"    x{i} = 0\n"
                 for i in range(31)
             )
+            + "long()\n"
         )
 
         with zipfile.ZipFile(
