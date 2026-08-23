@@ -38,7 +38,7 @@ def _strip_string_prefix(text: str) -> str:
 
 class DuplicationEngine(BaseMetricEngine):
     """
-    Duplication (SonarQube semantics, per `docs/duplication.md`).
+    Duplication (SonarQube semantics, per `docs/Duplication %.md`).
 
     Token streams are built with the standard-library `tokenize`
     module and compared across the analyzed files (project Input).

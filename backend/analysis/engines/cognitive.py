@@ -342,7 +342,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
             # Same formula as `if`: 1 + current_nesting_level. At this
             # point the `if` body's nesting has been left, so the
             # nesting level is the construct's own — a nested elif
-            # must not collapse to a flat +1 (docs/cognitive_complexity.md).
+            # must not collapse to a flat +1 (docs/Cognitive Complexity.md).
             amount=1 + context.nesting,
             kind="elif",
             reason="break in linear flow",
@@ -384,7 +384,7 @@ class _CognitiveComplexityVisitor(ast.NodeVisitor):
         context.add(
             node=first_node,
             # Same formula as `if`/`elif`: 1 + current_nesting_level
-            # (docs/cognitive_complexity.md).
+            # (docs/Cognitive Complexity.md).
             amount=1 + context.nesting,
             kind="else",
             reason="break in linear flow",
