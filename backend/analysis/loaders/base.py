@@ -18,3 +18,14 @@ class BaseLoader(ABC):
     @abstractmethod
     def load(self) -> list[Path]:
         pass
+
+    def cleanup(self) -> None:
+        """
+        Release resources the loader created while loading (e.g. the
+        temporary directory a ZIP was extracted into).
+
+        The default is a no-op: `PythonLoader` only wraps a path the
+        caller owns. `ZipLoader` overrides it. The service calls this
+        in a `finally` after the Analysis finishes.
+        """
+        pass

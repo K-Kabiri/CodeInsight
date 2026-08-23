@@ -143,6 +143,46 @@ def foo(a, b, c):
             6,
         )
 
+    def test_nested_elif_uses_nesting_increment(self):
+        path = self._create_python_file(
+            """
+def foo(a, b):
+    if a:
+        if b:
+            return 1
+        elif a:
+            return 2
+"""
+        )
+
+        # outer if = 1
+        # inner if = 2
+        # inner elif = 2 (1 + nesting 1, not a flat 1)
+        self.assertEqual(
+            self.engine.calculate([path]),
+            5,
+        )
+
+    def test_nested_else_uses_nesting_increment(self):
+        path = self._create_python_file(
+            """
+def foo(a, b):
+    if a:
+        if b:
+            return 1
+        else:
+            return 2
+"""
+        )
+
+        # outer if = 1
+        # inner if = 2
+        # inner else = 2 (1 + nesting 1, not a flat 1)
+        self.assertEqual(
+            self.engine.calculate([path]),
+            5,
+        )
+
     def test_max_nesting_is_reported(self):
         path = self._create_python_file(
             """

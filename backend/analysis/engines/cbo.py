@@ -66,6 +66,17 @@ class CBOEngine(BaseMetricEngine):
 
         return {
             "metric": "CBO",
+            "scope": scope,
+            # ADR-0001: on `single_file` scope only couplings to
+            # classes defined in that one file are observable, so the
+            # value is a lower bound — never a fabricated full count.
+            # On `project` scope the whole analyzed set is in the
+            # class index, so the value is complete.
+            "completeness": (
+                "full"
+                if scope == "project"
+                else "partial"
+            ),
             "total": total,
             "average": average,
             "class_count": len(all_scores),

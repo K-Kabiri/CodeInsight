@@ -245,3 +245,29 @@ class UserService:
             service["lcom"],
             1,
         )
+
+    # ADR-0001: scope/completeness
+    def test_detail_carries_scope_and_completeness(self):
+        file = self._create_file(
+            """
+class User:
+    pass
+"""
+        )
+
+        result = LCOMEngine().calculate_detailed(
+            [file],
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            result["scope"],
+            "single_file",
+        )
+
+        # LCOM1 counts only self-attribute pairs inside the class
+        # body, so the value is complete at any scope.
+        self.assertEqual(
+            result["completeness"],
+            "full",
+        )

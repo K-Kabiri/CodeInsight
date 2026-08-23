@@ -93,6 +93,35 @@ class LoaderTest(SimpleTestCase):
                 {"main.py", "utils.py"},
             )
 
+            loader.cleanup()
+
+            # The extracted temp directory is gone after cleanup.
+            for file in files:
+                self.assertFalse(
+                    file.exists(),
+                    f"{file} should be removed by cleanup()",
+                )
+
+    def test_zip_loader_cleanup_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            zip_path = Path(temp_dir) / "single.zip"
+
+            with zipfile.ZipFile(zip_path, "w") as zip_file:
+                zip_file.writestr(
+                    "main.py",
+                    "print('hello')\n",
+                )
+
+            loader = ZipLoader(zip_path)
+
+            loader.load()
+
+            loader.cleanup()
+            loader.cleanup()  # must not raise
+
+            self.assertIsNone(loader._temp_dir)
+
     def test_one_file_zip_is_project_scope(self):
         with tempfile.TemporaryDirectory() as temp_dir:
 

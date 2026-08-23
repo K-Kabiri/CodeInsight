@@ -71,7 +71,6 @@ class AnalysisSerializer(serializers.ModelSerializer):
             "status",
             "started_at",
             "finished_at",
-            "overall_score",
             "created_at",
             "metrics",
         ]
