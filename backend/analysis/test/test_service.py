@@ -1020,6 +1020,7 @@ hello()
                 f"    x{i} = 0\n"
                 for i in range(31)
             )
+            + "long()\n"
         )
 
         with zipfile.ZipFile(
