@@ -1,8 +1,12 @@
+import tempfile
+from pathlib import Path
+
 from django.test import SimpleTestCase, TestCase
 
 from analysis.engines import ENGINE_REGISTRY, get_engine
 from analysis.engines.violations import (
     RuleViolationsEngine,
+    add_snippets,
     build_detail,
     parse_bandit_output,
     parse_ruff_output,
@@ -110,6 +114,9 @@ class RuffOutputParserTest(SimpleTestCase):
                     "severity": "error",
                     "file": "main.py",
                     "line": 1,
+                    "column": 8,
+                    "tool_message": "`os` imported but unused",
+                    "snippet": None,
                     "tool": "ruff",
                 },
                 {
@@ -117,6 +124,9 @@ class RuffOutputParserTest(SimpleTestCase):
                     "severity": "error",
                     "file": "utils.py",
                     "line": 11,
+                    "column": 5,
+                    "tool_message": "Do not use bare `except`",
+                    "snippet": None,
                     "tool": "ruff",
                 },
                 {
@@ -124,6 +134,9 @@ class RuffOutputParserTest(SimpleTestCase):
                     "severity": "warning",
                     "file": "utils.py",
                     "line": 3,
+                    "column": 1,
+                    "tool_message": "Trailing whitespace",
+                    "snippet": None,
                     "tool": "ruff",
                 },
             ],
@@ -158,6 +171,12 @@ class BanditOutputParserTest(SimpleTestCase):
                     "severity": "low",
                     "file": "utils.py",
                     "line": 11,
+                    "column": 4,
+                    "tool_message": "Try, Except, Pass detected.",
+                    "snippet": (
+                        "11     except:\n"
+                        "12         pass\n"
+                    ),
                     "tool": "bandit",
                 },
             ],
@@ -169,6 +188,91 @@ class BanditOutputParserTest(SimpleTestCase):
         self.assertEqual(
             records,
             [],
+        )
+
+
+class AddSnippetsTest(SimpleTestCase):
+
+    def _write_source(self, source: str) -> Path:
+        temp_file = tempfile.NamedTemporaryFile(
+            suffix=".py",
+            delete=False,
+            mode="w",
+            encoding="utf-8",
+        )
+        temp_file.write(source)
+        temp_file.close()
+        return Path(temp_file.name)
+
+    def test_fills_ruff_snippet_from_source_file(self):
+        path = self._write_source(
+            "import os\n"
+            "x = 1\n"
+        )
+
+        try:
+            records = add_snippets(
+                [
+                    {
+                        "rule": "F401",
+                        "severity": "error",
+                        "file": str(path),
+                        "line": 1,
+                        "column": 8,
+                        "tool_message": "`os` imported but unused",
+                        "snippet": None,
+                        "tool": "ruff",
+                    },
+                ]
+            )
+        finally:
+            path.unlink()
+
+        self.assertEqual(
+            records[0]["snippet"],
+            "import os",
+        )
+
+    def test_keeps_bandit_snippet(self):
+        # Bandit's own `code` snippet is never overwritten.
+        records = add_snippets(
+            [
+                {
+                    "rule": "B110",
+                    "severity": "low",
+                    "file": "utils.py",
+                    "line": 11,
+                    "column": 4,
+                    "tool_message": "Try, Except, Pass detected.",
+                    "snippet": "except:\n    pass\n",
+                    "tool": "bandit",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            records[0]["snippet"],
+            "except:\n    pass\n",
+        )
+
+    def test_missing_file_keeps_snippet_none(self):
+        records = add_snippets(
+            [
+                {
+                    "rule": "F401",
+                    "severity": "error",
+                    "file": "does-not-exist.py",
+                    "line": 1,
+                    "column": 8,
+                    "tool_message": "message",
+                    "snippet": None,
+                    "tool": "ruff",
+                },
+            ]
+        )
+
+        self.assertIsNone(
+            records[0]["snippet"],
         )
 
 

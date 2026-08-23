@@ -25,18 +25,26 @@ def _ruff_severity(rule_code: str) -> str:
 def parse_ruff_output(output_text: str) -> list[dict]:
     """
     Convert `ruff check --output-format json` output into canonical
-    violation records: {rule, severity, file, line, tool}.
+    violation records: {rule, severity, file, line, column,
+    tool_message, snippet, tool}.
 
-    Each JSON item carries `code`, `filename`, `location.row`, and —
-    since Ruff 0.16 — a native `severity` field; when the field is
-    absent the severity is derived from the rule code's prefix
-    (E/F -> error, W -> warning, I -> info, else warning).
+    Each JSON item carries `code`, `filename`, `location.row` and
+    `location.column`, and `message`; since Ruff 0.16 it also
+    carries a native `severity` field — when the field is absent
+    the severity is derived from the rule code's prefix (E/F ->
+    error, W -> warning, I -> info, else warning). Fields the item
+    omits are captured defensively: `column`/`tool_message` default
+    to None. Ruff's JSON has no source text, so `snippet` starts as
+    None and is filled by `add_snippets` from the analyzed file on
+    disk.
     """
     data = json.loads(output_text)
 
     records = []
 
     for item in data:
+        location = item.get("location", {})
+
         records.append(
             {
                 "rule": item["code"],
@@ -45,7 +53,10 @@ def parse_ruff_output(output_text: str) -> list[dict]:
                     or _ruff_severity(item["code"])
                 ),
                 "file": item["filename"],
-                "line": item["location"]["row"],
+                "line": location.get("row"),
+                "column": location.get("column"),
+                "tool_message": item.get("message"),
+                "snippet": None,
                 "tool": "ruff",
             }
         )
@@ -56,11 +67,14 @@ def parse_ruff_output(output_text: str) -> list[dict]:
 def parse_bandit_output(output_text: str) -> list[dict]:
     """
     Convert `bandit -f json` output into canonical violation records:
-    {rule, severity, file, line, tool}.
+    {rule, severity, file, line, column, tool_message, snippet, tool}.
 
     Each result carries `test_id` (the B-code), `filename`,
-    `line_number`, and `issue_severity` (HIGH/MEDIUM/LOW), normalized
-    here to lowercase.
+    `line_number`, `issue_severity` (HIGH/MEDIUM/LOW, normalized
+    here to lowercase), `issue_text`, `col_offset` and `code` (the
+    offending source snippet, with line-number prefixes, when the
+    analyzer captures one). Fields the result omits are captured
+    defensively: `column`/`tool_message`/`snippet` default to None.
     """
     data = json.loads(output_text)
 
@@ -73,8 +87,54 @@ def parse_bandit_output(output_text: str) -> list[dict]:
                 "severity": item["issue_severity"].lower(),
                 "file": item["filename"],
                 "line": item["line_number"],
+                "column": item.get("col_offset"),
+                "tool_message": item.get("issue_text"),
+                "snippet": item.get("code"),
                 "tool": "bandit",
             }
+        )
+
+    return records
+
+
+def add_snippets(records: list[dict]) -> list[dict]:
+    """
+    Fill the `snippet` of every record that does not carry one yet
+    (Ruff's JSON has no source text) by reading the offending line
+    from the analyzed file on disk. Bandit's own `code` snippet is
+    left untouched. Records whose file cannot be read (or whose line
+    is out of range) keep `snippet: None`.
+    """
+    source_lines_by_file: dict[str, list[str] | None] = {}
+
+    for record in records:
+        if record.get("snippet") is not None:
+            continue
+
+        file_name = record["file"]
+
+        if file_name not in source_lines_by_file:
+            try:
+                source_lines_by_file[file_name] = (
+                    Path(file_name).read_text(
+                        encoding="utf-8",
+                    ).splitlines()
+                )
+            except OSError:
+                source_lines_by_file[file_name] = None
+
+        source_lines = source_lines_by_file[file_name]
+
+        if source_lines is None:
+            record["snippet"] = None
+            continue
+
+        lineno = record["line"]
+
+        record["snippet"] = (
+            source_lines[lineno - 1]
+            if 1 <= lineno <= len(source_lines)
+            else None
         )
 
     return records
@@ -128,9 +188,10 @@ class RuleViolationsEngine(BaseMetricEngine):
 
     A thin adapter runs Ruff (lint) and Bandit (security) in
     machine-readable mode and a parser converts their output into
-    canonical violation records (rule, severity, file, line, tool).
-    The scalar value is the total number of findings; the detailed
-    output reports total, per-rule, per-severity and per-file counts.
+    canonical violation records (rule, severity, file, line, column,
+    tool_message, snippet, tool). The scalar value is the total
+    number of findings; the detailed output reports total, per-rule,
+    per-severity and per-file counts plus the records themselves.
 
     Rule set (documented, per the Code Health spec): Ruff runs its
     own default selection under `--isolated` (no configuration files
@@ -172,6 +233,7 @@ class RuleViolationsEngine(BaseMetricEngine):
         records = []
         records.extend(parse_ruff_output(ruff_output))
         records.extend(parse_bandit_output(bandit_output))
+        records = add_snippets(records)
 
         return build_detail(scope, records)
 
