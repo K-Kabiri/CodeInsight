@@ -110,3 +110,95 @@ class MeEndpointTest(APITestCase):
         )
         response = client.get("/api/me/")
         self.assertEqual(response.status_code, 401)
+
+
+class RegisterEndpointTest(APITestCase):
+    """
+    POST /api/auth/register/ — sign up: creates the user, hashes the
+    password, and returns a token in the same shape as login so the
+    client's auth flow treats register and login identically.
+    """
+
+    def test_register_creates_user_and_issues_token(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "carol", "password": "s3cret-pass-carol"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("token", response.data)
+
+        user = User.objects.get(username="carol")
+        token = Token.objects.get(user=user)
+        self.assertEqual(response.data["token"], token.key)
+        self.assertTrue(user.check_password("s3cret-pass-carol"))
+
+    def test_registered_token_authenticates_a_request(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "carol", "password": "s3cret-pass-carol"},
+            format="json",
+        )
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Token {response.data['token']}"
+        )
+        me = client.get("/api/me/")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.data["username"], "carol")
+
+    def test_duplicate_username_is_rejected_with_a_clear_400(self):
+        User.objects.create_user(
+            username="carol",
+            password="another-pass",
+        )
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "carol", "password": "s3cret-pass-carol"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("username", response.data)
+        self.assertIn(
+            "already exists",
+            str(response.data["username"]),
+        )
+        self.assertEqual(
+            User.objects.filter(username="carol").count(),
+            1,
+        )
+
+    def test_invalid_username_characters_are_rejected(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "bad name!", "password": "s3cret-pass-carol"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            User.objects.filter(username="bad name!").exists()
+        )
+
+    def test_missing_credentials_are_rejected(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "carol"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("password", response.data)
+        self.assertFalse(
+            User.objects.filter(username="carol").exists()
+        )
+
+    def test_weak_password_is_rejected(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "carol", "password": "12345678"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("password", response.data)
+        self.assertFalse(
+            User.objects.filter(username="carol").exists()
+        )

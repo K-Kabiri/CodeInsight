@@ -318,6 +318,121 @@ class AnalysisPaginationTest(AnalysisApiTestCase):
         self.assertIsNotNone(response.data["previous"])
 
 
+class AnalysisVersionFilterTest(AnalysisApiTestCase):
+    """
+    GET /api/analyses/?project_version=<id> — owner-scoped filter so
+    the comparison screen can fetch one version's Analyses. A version
+    that is not the caller's (or does not exist) is a 404, matching
+    the create-endpoint contract: other users' data is never leaked.
+    """
+
+    def test_list_can_be_filtered_by_project_version(self):
+        version = self._version(self.alice)
+        created = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+
+        response = self.alice_client.get(
+            f"/api/analyses/?project_version={version.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(
+            response.data["results"][0]["id"],
+            created.data["id"],
+        )
+
+    def test_filter_returns_only_that_versions_analyses(self):
+        project = Project.objects.create(
+            owner=self.alice,
+            name="Project",
+        )
+        version_one = ProjectVersion.objects.create(
+            project=project,
+            version_number=1,
+            source_file=SimpleUploadedFile(
+                "v1.py",
+                b"x = 1\n",
+            ),
+        )
+        version_two = ProjectVersion.objects.create(
+            project=project,
+            version_number=2,
+            source_file=SimpleUploadedFile(
+                "v2.py",
+                b"x = 2\n",
+            ),
+        )
+        first = self._create(
+            self.alice_client,
+            version_one,
+            ["LOC"],
+        )
+        second = self._create(
+            self.alice_client,
+            version_two,
+            ["LOC"],
+        )
+
+        response = self.alice_client.get(
+            f"/api/analyses/?project_version={version_one.id}"
+        )
+        self.assertEqual(
+            [item["id"] for item in response.data["results"]],
+            [first.data["id"]],
+        )
+
+        response = self.alice_client.get(
+            f"/api/analyses/?project_version={version_two.id}"
+        )
+        self.assertEqual(
+            [item["id"] for item in response.data["results"]],
+            [second.data["id"]],
+        )
+
+    def test_without_filter_the_list_is_unchanged(self):
+        version = self._version(self.alice)
+        first = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+        second = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+
+        response = self.alice_client.get("/api/analyses/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 2)
+        self.assertEqual(
+            {item["id"] for item in response.data["results"]},
+            {first.data["id"], second.data["id"]},
+        )
+
+    def test_filter_on_other_users_version_returns_404(self):
+        version = self._version(self.alice)
+        response = self.bob_client.get(
+            f"/api/analyses/?project_version={version.id}"
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_filter_on_unknown_version_returns_404(self):
+        response = self.alice_client.get(
+            "/api/analyses/?project_version=999999"
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_filter_with_non_numeric_version_returns_404(self):
+        response = self.alice_client.get(
+            "/api/analyses/?project_version=not-a-number"
+        )
+        self.assertEqual(response.status_code, 404)
+
+
 class RealThreadAnalysisTest(TransactionTestCase):
     """
     The production execution path: the real background dispatcher runs
