@@ -9,6 +9,11 @@ urlpatterns = [
         name="api-token-obtain",
     ),
     path(
+        "auth/register/",
+        views.RegisterView.as_view(),
+        name="api-register",
+    ),
+    path(
         "me/",
         views.MeView.as_view(),
         name="api-me",
