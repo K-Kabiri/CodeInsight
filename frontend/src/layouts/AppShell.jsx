@@ -6,13 +6,18 @@ import {
   ListItemText,
   Typography,
 } from '@mui/material'
+import { useContext } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
+import {
+  NewProjectContext,
+} from '../components/NewProjectContext'
+import { NewProjectDialog } from '../components/NewProjectDialog'
+import { AddIcon } from '../components/icons'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard' },
-  { to: '/projects', label: 'Projects' },
   { to: '/analyses', label: 'Analyses' },
 ]
 
@@ -24,6 +29,7 @@ const NAV_ITEMS = [
 export function AppShell() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { openDialog } = useContext(NewProjectContext)
 
   function handleLogout() {
     logout()
@@ -50,6 +56,13 @@ export function AppShell() {
           flexDirection: 'column',
           px: 1.5,
           py: 2,
+          // The sidebar always fills the viewport and sticks to the
+          // top while the page scrolls, so the bottom actions ("New
+          // project", "Log out") stay visible at a fixed size.
+          position: 'sticky',
+          top: 0,
+          height: '100vh',
+          overflowY: 'auto',
         }}
       >
         <Typography
@@ -87,12 +100,12 @@ export function AppShell() {
         </List>
 
         <Box sx={{ flexGrow: 1 }} />
-        <Divider sx={{ mb: 1 }} />
+        <Divider sx={{ mb: 1, flexShrink: 0 }} />
 
         {user && (
           <Typography
             variant="caption"
-            sx={{ px: 1, pb: 1, color: 'text.secondary' }}
+            sx={{ px: 1, pb: 1, color: 'text.secondary', flexShrink: 0 }}
           >
             Signed in as{' '}
             <Box
@@ -105,9 +118,32 @@ export function AppShell() {
         )}
 
         <ListItemButton
+          onClick={openDialog}
+          sx={{
+            borderRadius: 2,
+            mb: 0.5,
+            // MUI's ListItemButton defaults to flexGrow: 1, which would
+            // stretch these direct flex children to fill the sidebar —
+            // pin them to content size like the nav items above.
+            flexGrow: 0,
+            flexShrink: 0,
+            color: 'primary.main',
+            '&:hover': {
+              color: 'primary.main',
+              bgcolor: 'rgba(108, 140, 255, 0.08)',
+            },
+          }}
+        >
+          <AddIcon sx={{ mr: 1, fontSize: 20 }} />
+          <ListItemText primary="New project" />
+        </ListItemButton>
+
+        <ListItemButton
           onClick={handleLogout}
           sx={{
             borderRadius: 2,
+            flexGrow: 0,
+            flexShrink: 0,
             color: 'error.main',
             '&:hover': {
               color: 'error.main',
@@ -125,6 +161,8 @@ export function AppShell() {
       >
         <Outlet />
       </Box>
+
+      <NewProjectDialog />
     </Box>
   )
 }

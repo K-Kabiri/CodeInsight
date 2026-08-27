@@ -16,6 +16,14 @@ vi.mock('../api/client', () => ({
   login: vi.fn(),
   register: vi.fn(),
   fetchMe: vi.fn(),
+  listProjects: vi.fn(),
+  getProject: vi.fn(),
+  createProject: vi.fn(),
+  listVersions: vi.fn(),
+  uploadVersion: vi.fn(),
+  listMetrics: vi.fn(),
+  listAnalyses: vi.fn(),
+  createAnalysis: vi.fn(),
 }))
 
 function renderApp() {
@@ -34,6 +42,20 @@ describe('app shell and authentication', () => {
     localStorage.clear()
     vi.clearAllMocks()
     window.history.pushState({}, '', '/')
+    // After login the dashboard fires its own queries; give them
+    // empty pages so the auth tests stay focused on the auth flow.
+    client.listProjects.mockResolvedValue({
+      count: 0,
+      next: null,
+      previous: null,
+      results: [],
+    })
+    client.listAnalyses.mockResolvedValue({
+      count: 0,
+      next: null,
+      previous: null,
+      results: [],
+    })
   })
 
   it('shows the landing page as the initial screen', () => {

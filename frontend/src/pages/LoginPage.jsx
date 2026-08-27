@@ -12,27 +12,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
+import { extractErrorMessage } from '../api/errors'
 
 const FEATURES = [
   '12 metrics · each with a documented definition',
   'Every finding points at the exact function, class, and line',
   'Compare versions and watch quality change',
 ]
-
-// The backend surfaces errors as DRF field errors; pick the first
-// readable message for the form alert.
-function extractErrorMessage(error) {
-  const data = error?.response?.data
-  if (!data) return 'Something went wrong. Please try again.'
-  const first = (value) => (Array.isArray(value) ? value[0] : value)
-  return (
-    first(data.non_field_errors) ||
-    first(data.username) ||
-    first(data.password) ||
-    first(data.detail) ||
-    'Request failed. Please try again.'
-  )
-}
 
 /**
  * Landing / Auth page (prototype variant L): brand hero beside a

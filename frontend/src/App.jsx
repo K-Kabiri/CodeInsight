@@ -3,8 +3,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth'
 import { AppShell } from './layouts/AppShell'
 import ComingSoon from './pages/ComingSoon'
-import HomePage from './pages/HomePage'
+import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
+import ProjectDetailPage from './pages/ProjectDetailPage'
 
 /**
  * Route map (frontend spec): /login is public; everything else lives
@@ -23,10 +24,14 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<DashboardPage />} />
+        <Route
+          path="/projects/:id"
+          element={<ProjectDetailPage />}
+        />
         <Route
           path="/projects"
-          element={<ComingSoon title="Projects" />}
+          element={<Navigate to="/" replace />}
         />
         <Route
           path="/analyses"
