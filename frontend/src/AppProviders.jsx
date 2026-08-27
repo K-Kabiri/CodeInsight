@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthContext'
+import { NewProjectProvider } from './components/NewProjectDialog'
 import { theme } from './theme'
 
 const defaultQueryClient = new QueryClient()
@@ -22,7 +23,9 @@ export default function AppProviders({
       <BrowserRouter>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <NewProjectProvider>{children}</NewProjectProvider>
+          </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>
     </QueryClientProvider>

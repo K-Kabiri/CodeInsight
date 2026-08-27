@@ -62,4 +62,60 @@ export async function fetchMe() {
   return data // { id, username }
 }
 
+// --- projects --------------------------------------------------------
+
+export async function listProjects(params) {
+  const { data } = await api.get('/projects/', { params })
+  return data // paginated { count, next, previous, results }
+}
+
+export async function getProject(projectId) {
+  const { data } = await api.get(`/projects/${projectId}/`)
+  return data
+}
+
+export async function createProject(payload) {
+  const { data } = await api.post('/projects/', payload)
+  return data
+}
+
+export async function listVersions(projectId, params) {
+  const { data } = await api.get(
+    `/projects/${projectId}/versions/`,
+    { params },
+  )
+  return data // paginated
+}
+
+export async function uploadVersion(projectId, file) {
+  const formData = new FormData()
+  formData.append('source_file', file)
+  const { data } = await api.post(
+    `/projects/${projectId}/versions/`,
+    formData,
+  )
+  return data // { id, version_number, source_file, uploaded_at }
+}
+
+// --- metric catalog ---------------------------------------------------
+
+// Public (no auth needed) and unpaginated: a fixed list of the 12
+// seeded MetricDefinition rows, exactly as the serializer emits them.
+export async function listMetrics() {
+  const { data } = await api.get('/metrics/')
+  return data // [{ name, display_name, category, description, unit, ... }]
+}
+
+// --- analyses ---------------------------------------------------------
+
+export async function listAnalyses(params) {
+  const { data } = await api.get('/analyses/', { params })
+  return data // paginated { count, next, previous, results }
+}
+
+export async function createAnalysis(payload) {
+  const { data } = await api.post('/analyses/', payload)
+  return data // { id, project_version, status: 'PENDING', ... }
+}
+
 export default api
