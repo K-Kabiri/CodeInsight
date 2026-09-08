@@ -3,32 +3,54 @@ import {
   Divider,
   List,
   ListItemButton,
+  ListItemIcon,
   ListItemText,
   Typography,
 } from '@mui/material'
 import { useContext } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import {
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
 import {
   NewProjectContext,
 } from '../components/NewProjectContext'
 import { NewProjectDialog } from '../components/NewProjectDialog'
-import { AddIcon } from '../components/icons'
+import {
+  AddIcon,
+  FolderOpenIcon,
+  LogoutIcon,
+  MenuBookIcon,
+  PersonIcon,
+  ReceiptLongIcon,
+  SpaceDashboardIcon,
+} from '../components/icons'
+import { pageBackgroundImage } from '../theme'
 
+// Sidebar navigation, mirroring the prototype's Command Center list
+// (dashboard / projects / analyses / metric catalog), each item with
+// its Material glyph.
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/analyses', label: 'Analyses' },
+  { to: '/', label: 'Dashboard', icon: SpaceDashboardIcon, end: true },
+  { to: '/projects', label: 'Projects', icon: FolderOpenIcon },
+  { to: '/analyses', label: 'Analyses', icon: ReceiptLongIcon },
+  { to: '/metrics', label: 'Metric catalog', icon: MenuBookIcon },
+  { to: '/profile', label: 'Profile', icon: PersonIcon },
 ]
 
 /**
  * The Command Center shell (prototype variant A): dark sidebar with
- * the brand, navigation, and a red "Log out" item pinned to the
- * bottom; the routed page renders into the main area.
+ * the brand, navigation (with icons), and a red "Log out" item pinned
+ * to the bottom; the routed page renders into the main area.
  */
 export function AppShell() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const { openDialog } = useContext(NewProjectContext)
 
   function handleLogout() {
@@ -42,12 +64,13 @@ export function AppShell() {
         display: 'flex',
         minHeight: '100vh',
         bgcolor: 'background.default',
+        backgroundImage: pageBackgroundImage,
       }}
     >
       <Box
         component="aside"
         sx={{
-          width: 220,
+          width: 230,
           flexShrink: 0,
           bgcolor: '#0b0e15',
           borderRight: '1px solid',
@@ -70,7 +93,17 @@ export function AppShell() {
           sx={{ fontWeight: 800, px: 1, pb: 2 }}
         >
           Code
-          <Box component="span" sx={{ color: 'primary.main' }}>
+          <Box
+            component="span"
+            sx={{
+              display: 'inline-block',
+              backgroundImage:
+                'linear-gradient(90deg, #6c8cff, #5ee6c8)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
             Insight
           </Box>
         </Typography>
@@ -81,7 +114,7 @@ export function AppShell() {
               key={item.to}
               component={NavLink}
               to={item.to}
-              end={item.to === '/'}
+              end={item.end}
               sx={{
                 borderRadius: 2,
                 mb: 0.5,
@@ -90,11 +123,27 @@ export function AppShell() {
                   bgcolor: 'rgba(108, 140, 255, 0.16)',
                   color: 'text.primary',
                   fontWeight: 700,
+                  boxShadow:
+                    'inset 0 0 0 1px rgba(108, 140, 255, 0.3), 0 0 14px rgba(108, 140, 255, 0.18)',
                 },
                 '&:hover': { color: 'text.primary' },
               }}
             >
-              <ListItemText primary={item.label} />
+              <ListItemIcon
+                sx={{
+                  minWidth: 32,
+                  color: 'inherit',
+                  '& .MuiSvgIcon-root': { fontSize: 21 },
+                }}
+              >
+                <item.icon />
+              </ListItemIcon>
+              <ListItemText
+                primary={item.label}
+                sx={{
+                  '& .MuiListItemText-primary': { fontSize: '0.9rem' },
+                }}
+              />
             </ListItemButton>
           ))}
         </List>
@@ -134,8 +183,21 @@ export function AppShell() {
             },
           }}
         >
-          <AddIcon sx={{ mr: 1, fontSize: 20 }} />
-          <ListItemText primary="New project" />
+          <ListItemIcon
+            sx={{
+              minWidth: 32,
+              color: 'inherit',
+              '& .MuiSvgIcon-root': { fontSize: 21 },
+            }}
+          >
+            <AddIcon />
+          </ListItemIcon>
+          <ListItemText
+            primary="New project"
+            sx={{
+              '& .MuiListItemText-primary': { fontSize: '0.9rem' },
+            }}
+          />
         </ListItemButton>
 
         <ListItemButton
@@ -151,15 +213,38 @@ export function AppShell() {
             },
           }}
         >
-          <ListItemText primary="Log out" />
+          <ListItemIcon
+            sx={{
+              minWidth: 32,
+              color: 'inherit',
+              '& .MuiSvgIcon-root': { fontSize: 21 },
+            }}
+          >
+            <LogoutIcon />
+          </ListItemIcon>
+          <ListItemText
+            primary="Log out"
+            sx={{
+              '& .MuiListItemText-primary': { fontSize: '0.9rem' },
+            }}
+          />
         </ListItemButton>
       </Box>
 
       <Box
         component="main"
-        sx={{ flex: 1, minWidth: 0, p: 3 }}
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          p: 3,
+          position: 'relative',
+        }}
       >
-        <Outlet />
+        {/* Keyed on the path so every navigation replays the entrance
+            animation for the newly routed page. */}
+        <Box key={location.pathname} className="dsh-page-enter">
+          <Outlet />
+        </Box>
       </Box>
 
       <NewProjectDialog />

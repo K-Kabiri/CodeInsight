@@ -7,3 +7,18 @@ import { afterEach } from 'vitest'
 afterEach(() => {
   cleanup()
 })
+
+// recharts' ResponsiveContainer observes its host element; jsdom has
+// no ResizeObserver, so stub the smallest surface that keeps the
+// chart mount from throwing in tests (the charts still render
+// nothing measurable in jsdom — assertions target the surrounding
+// UI, never SVG internals).
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = ResizeObserverStub
+}

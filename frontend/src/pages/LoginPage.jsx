@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
 import { extractErrorMessage } from '../api/errors'
+import { pageBackgroundImage } from '../theme'
 
 const FEATURES = [
   '12 metrics · each with a documented definition',
@@ -83,6 +84,8 @@ export default function LoginPage() {
         gap: 6,
         px: { xs: 3, md: '8vw' },
         py: 4,
+        bgcolor: 'background.default',
+        backgroundImage: pageBackgroundImage,
       }}
     >
       {/* Brand hero */}

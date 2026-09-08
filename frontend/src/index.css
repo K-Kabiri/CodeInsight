@@ -1,4 +1,5 @@
-/* Minimal base styles — MUI's CssBaseline handles the rest. */
+/* Base styles — MUI's CssBaseline handles the reset and the theme,
+   this file only adds the shared motion/colour flourishes. */
 html,
 body,
 #root {
@@ -7,4 +8,50 @@ body,
 
 body {
   margin: 0;
+  background-color: #0f1117;
+}
+
+/* Soft entrance used for each routed page: the shell keys the main
+   content on the current path so every navigation fades the new page
+   up. */
+@keyframes dsh-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dsh-page-enter {
+  animation: dsh-page-enter 340ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* Slim, dark scrollbars inside the app so the neon panels stay the
+   focus. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a3142;
+  border-radius: 999px;
+  border: 2px solid #0f1117;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4257;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-page-enter {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
 }

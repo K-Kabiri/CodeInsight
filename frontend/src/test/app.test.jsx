@@ -81,7 +81,12 @@ describe('app shell and authentication', () => {
 
   it('logs in and reaches the protected home screen', async () => {
     client.login.mockResolvedValue({ token: 'tok-123' })
-    client.fetchMe.mockResolvedValue({ id: 1, username: 'alice' })
+    client.fetchMe.mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      email: '',
+      date_joined: '2026-08-01T00:00:00Z',
+    })
     const user = userEvent.setup()
     renderApp()
 
@@ -90,9 +95,7 @@ describe('app shell and authentication', () => {
     await user.click(screen.getByRole('button', { name: 'Log in' }))
 
     expect(
-      await screen.findByRole('heading', {
-        name: /welcome back, alice/i,
-      }),
+      await screen.findByRole('heading', { name: 'Dashboard' }),
     ).toBeInTheDocument()
     expect(client.login).toHaveBeenCalledWith('alice', 's3cret-pass')
   })
@@ -118,7 +121,7 @@ describe('app shell and authentication', () => {
       await screen.findByText(/unable to log in/i),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('heading', { name: /welcome back/i }),
+      screen.queryByRole('heading', { name: 'Dashboard' }),
     ).not.toBeInTheDocument()
   })
 
@@ -145,7 +148,12 @@ describe('app shell and authentication', () => {
 
   it('signs up and lands on the home screen', async () => {
     client.register.mockResolvedValue({ token: 'tok-456' })
-    client.fetchMe.mockResolvedValue({ id: 2, username: 'carol' })
+    client.fetchMe.mockResolvedValue({
+      id: 2,
+      username: 'carol',
+      email: '',
+      date_joined: '2026-08-02T00:00:00Z',
+    })
     const user = userEvent.setup()
     renderApp()
 
@@ -161,22 +169,23 @@ describe('app shell and authentication', () => {
     )
 
     expect(
-      await screen.findByRole('heading', {
-        name: /welcome back, carol/i,
-      }),
+      await screen.findByRole('heading', { name: 'Dashboard' }),
     ).toBeInTheDocument()
     expect(client.register).toHaveBeenCalledWith('carol', 's3cret-pass')
   })
 
   it('restores the session from localStorage on reload', async () => {
-    client.fetchMe.mockResolvedValue({ id: 1, username: 'alice' })
+    client.fetchMe.mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      email: '',
+      date_joined: '2026-08-01T00:00:00Z',
+    })
     localStorage.setItem(TOKEN_KEY, 'tok-789')
     renderApp()
 
     expect(
-      await screen.findByRole('heading', {
-        name: /welcome back, alice/i,
-      }),
+      await screen.findByRole('heading', { name: 'Dashboard' }),
     ).toBeInTheDocument()
   })
 
@@ -192,14 +201,17 @@ describe('app shell and authentication', () => {
   })
 
   it('logs out from the sidebar and returns to the landing page', async () => {
-    client.fetchMe.mockResolvedValue({ id: 1, username: 'alice' })
+    client.fetchMe.mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      email: '',
+      date_joined: '2026-08-01T00:00:00Z',
+    })
     localStorage.setItem(TOKEN_KEY, 'tok-789')
     const user = userEvent.setup()
     renderApp()
 
-    await screen.findByRole('heading', {
-      name: /welcome back, alice/i,
-    })
+    await screen.findByRole('heading', { name: 'Dashboard' })
 
     await user.click(screen.getByRole('button', { name: /log out/i }))
 
@@ -207,5 +219,35 @@ describe('app shell and authentication', () => {
       await screen.findByRole('tab', { name: 'Log in' }),
     ).toBeInTheDocument()
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+  })
+
+  it('sidebar links to projects, analyses, catalog and profile', async () => {
+    client.fetchMe.mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      email: '',
+      date_joined: '2026-08-01T00:00:00Z',
+    })
+    localStorage.setItem(TOKEN_KEY, 'tok-789')
+    const user = userEvent.setup()
+    renderApp()
+
+    await screen.findByRole('heading', { name: 'Dashboard' })
+
+    // The full prototype-A navigation is present with icons.
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Analyses' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Metric catalog' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument()
+
+    // Clicking the catalog link opens the catalog screen.
+    await user.click(
+      screen.getByRole('link', { name: 'Metric catalog' }),
+    )
+    expect(
+      await screen.findByRole('heading', { name: 'Metric catalog' }),
+    ).toBeInTheDocument()
   })
 })

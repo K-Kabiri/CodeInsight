@@ -79,6 +79,11 @@ export async function createProject(payload) {
   return data
 }
 
+export async function deleteProject(projectId) {
+  const { data } = await api.delete(`/projects/${projectId}/`)
+  return data
+}
+
 export async function listVersions(projectId, params) {
   const { data } = await api.get(
     `/projects/${projectId}/versions/`,
@@ -116,6 +121,28 @@ export async function listAnalyses(params) {
 export async function createAnalysis(payload) {
   const { data } = await api.post('/analyses/', payload)
   return data // { id, project_version, status: 'PENDING', ... }
+}
+
+export async function deleteAnalysis(analysisId) {
+  const { data } = await api.delete(`/analyses/${analysisId}/`)
+  return data
+}
+
+export async function getAnalysis(analysisId) {
+  const { data } = await api.get(`/analyses/${analysisId}/`)
+  return data // { id, project_version, status, started_at, finished_at, created_at, metrics }
+}
+
+// --- AI report (ai-report ticket 05) ------------------------------------
+
+export async function getAiReport(analysisId) {
+  const { data } = await api.get(`/analyses/${analysisId}/ai-report/`)
+  return data // { summary, metric_content, model_name, generated_at }
+}
+
+export async function generateAiReport(analysisId) {
+  const { data } = await api.post(`/analyses/${analysisId}/ai-report/`)
+  return data // { summary, metric_content, model_name, generated_at }
 }
 
 export default api
