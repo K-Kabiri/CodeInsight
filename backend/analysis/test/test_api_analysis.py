@@ -60,7 +60,18 @@ class AnalysisApiTestCase(APITestCase):
         )
         self.dispatcher_patcher.start()
 
+        # API tests never call the real provider: Analyses created with
+        # ai_requested=True run inline, so the report-generation hook is
+        # swapped for a no-op (tests for the generation itself inject
+        # their own fakes).
+        self.ai_generator_patcher = mock.patch(
+            "analysis.services.analysis_service.ai_report_generator",
+            return_value=None,
+        )
+        self.ai_generator_patcher.start()
+
     def tearDown(self):
+        self.ai_generator_patcher.stop()
         self.dispatcher_patcher.stop()
         self._media_override.disable()
         shutil.rmtree(
@@ -82,13 +93,16 @@ class AnalysisApiTestCase(APITestCase):
             ),
         )
 
-    def _create(self, client, version, metrics):
+    def _create(self, client, version, metrics, ai_requested=None):
+        payload = {
+            "project_version": version.id,
+            "metrics": metrics,
+        }
+        if ai_requested is not None:
+            payload["ai_requested"] = ai_requested
         return client.post(
             "/api/analyses/",
-            {
-                "project_version": version.id,
-                "metrics": metrics,
-            },
+            payload,
             format="json",
         )
 
@@ -179,6 +193,67 @@ class AnalysisCreateTest(AnalysisApiTestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class AnalysisAiRequestedFlagTest(AnalysisApiTestCase):
+    """
+    Ticket 01 (ai-report): the `ai_requested` creation flag round-trips
+    through the create endpoint and is reflected in read responses.
+    """
+
+    def test_create_with_ai_requested_true_round_trips(self):
+        version = self._version(self.alice)
+        response = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+            ai_requested=True,
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIs(response.data["ai_requested"], True)
+
+        analysis = Analysis.objects.get(id=response.data["id"])
+        self.assertTrue(analysis.ai_requested)
+
+    def test_create_without_ai_requested_defaults_to_false(self):
+        version = self._version(self.alice)
+        response = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIs(response.data["ai_requested"], False)
+
+        analysis = Analysis.objects.get(id=response.data["id"])
+        self.assertFalse(analysis.ai_requested)
+
+    def test_create_with_ai_requested_false_stays_false(self):
+        version = self._version(self.alice)
+        response = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+            ai_requested=False,
+        )
+        self.assertEqual(response.status_code, 201)
+
+        analysis = Analysis.objects.get(id=response.data["id"])
+        self.assertFalse(analysis.ai_requested)
+
+    def test_detail_returns_ai_requested(self):
+        version = self._version(self.alice)
+        created = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+            ai_requested=True,
+        )
+        response = self.alice_client.get(
+            f"/api/analyses/{created.data['id']}/"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(response.data["ai_requested"], True)
+
+
 class AnalysisRunAndResultsTest(AnalysisApiTestCase):
 
     def test_analysis_runs_and_detail_returns_per_metric_results(self):
@@ -215,7 +290,7 @@ class AnalysisRunAndResultsTest(AnalysisApiTestCase):
         created = self._create(
             self.alice_client,
             version,
-            ["LOC", "DUPLICATION"],
+            ["LOC", "DUPLICATION", "CYCLIC"],
         )
 
         analysis = Analysis.objects.get(id=created.data["id"])
@@ -229,14 +304,30 @@ class AnalysisRunAndResultsTest(AnalysisApiTestCase):
             for metric in response.data["metrics"]
         }
 
+        # Duplication now runs on the single-file input too (self-
+        # comparison): no repetition -> a real 0.0, completeness full.
         duplication = metrics["DUPLICATION"]
         self.assertEqual(duplication["status"], "COMPLETED")
-        self.assertIsNone(duplication["value"])
+        self.assertEqual(duplication["value"], 0.0)
         self.assertEqual(
             duplication["detail"]["completeness"],
+            "full",
+        )
+        self.assertEqual(
+            duplication["detail"]["scope"],
+            "single_file",
+        )
+
+        # CYCLIC is still genuinely not_applicable on one file and is
+        # reported gracefully (null value + reason, no failure).
+        cyclic = metrics["CYCLIC"]
+        self.assertEqual(cyclic["status"], "COMPLETED")
+        self.assertIsNone(cyclic["value"])
+        self.assertEqual(
+            cyclic["detail"]["completeness"],
             "not_applicable",
         )
-        self.assertIn("reason", duplication["detail"])
+        self.assertIn("reason", cyclic["detail"])
 
         loc = metrics["LOC"]
         self.assertEqual(loc["status"], "COMPLETED")
@@ -609,3 +700,93 @@ class RealThreadAnalysisTest(TransactionTestCase):
 
         self.assertIn("RUNNING", observed_statuses)
         self.assertIn("COMPLETED", observed_statuses)
+
+
+class _NoopDispatcher:
+    """Keeps an Analysis in PENDING after create (no worker runs)."""
+
+    def dispatch(self, analysis):
+        pass
+
+
+class AnalysisDeleteTest(AnalysisApiTestCase):
+
+    def test_delete_settled_analysis_by_owner(self):
+        version = self._version(self.alice)
+        created = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+        analysis = Analysis.objects.get(id=created.data["id"])
+        self.assertEqual(analysis.status, "COMPLETED")
+        self.assertGreater(analysis.metrics.count(), 0)
+
+        response = self.alice_client.delete(
+            f"/api/analyses/{analysis.id}/"
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(
+            Analysis.objects.filter(id=analysis.id).exists()
+        )
+        # Cascades: the per-metric rows disappear with the Analysis.
+        self.assertFalse(
+            AnalysisMetric.objects.filter(
+                analysis_id=analysis.id
+            ).exists()
+        )
+
+    def test_delete_running_analysis_returns_409(self):
+        version = self._version(self.alice)
+        with mock.patch(
+            "analysis.views.dispatcher",
+            _NoopDispatcher(),
+        ):
+            created = self._create(
+                self.alice_client,
+                version,
+                ["LOC"],
+            )
+        analysis_id = created.data["id"]
+        self.assertEqual(
+            Analysis.objects.get(id=analysis_id).status,
+            "PENDING",
+        )
+
+        response = self.alice_client.delete(
+            f"/api/analyses/{analysis_id}/"
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(
+            Analysis.objects.filter(id=analysis_id).exists()
+        )
+
+    def test_delete_other_users_analysis_returns_404(self):
+        version = self._version(self.alice)
+        created = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+        analysis_id = created.data["id"]
+
+        response = self.bob_client.delete(
+            f"/api/analyses/{analysis_id}/"
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(
+            Analysis.objects.filter(id=analysis_id).exists()
+        )
+
+    def test_delete_requires_authentication(self):
+        version = self._version(self.alice)
+        created = self._create(
+            self.alice_client,
+            version,
+            ["LOC"],
+        )
+
+        response = self.client.delete(
+            f"/api/analyses/{created.data['id']}/"
+        )
+        self.assertEqual(response.status_code, 401)

@@ -1345,7 +1345,7 @@ hello()
             2,
         )
 
-    def test_duplication_single_file_is_not_applicable(self):
+    def test_duplication_single_file_reports_internal_copies(self):
         user = User.objects.create_user(
             username="testuser14",
             password="testpass",
@@ -1370,8 +1370,14 @@ hello()
             + "    return v0\n"
         )
 
+        # The function is copied twice inside the one uploaded file:
+        # the metric must self-compare the file and report the copy.
         analysis_file.write(
-            duplicated_function.encode("utf-8")
+            (
+                duplicated_function
+                + "\n"
+                + duplicated_function
+            ).encode("utf-8")
         )
 
         analysis_file.close()
@@ -1443,15 +1449,41 @@ hello()
             AnalysisMetric.Status.COMPLETED,
         )
 
-        self.assertIsNone(
+        self.assertAlmostEqual(
             duplication_result.value,
+            60 / 61 * 100,
+        )
+
+        detail = duplication_result.detail
+
+        self.assertEqual(
+            detail["scope"],
+            "single_file",
         )
 
         self.assertEqual(
-            duplication_result.detail["completeness"],
-            "not_applicable",
+            detail["completeness"],
+            "full",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            detail["duplicated_lines"],
+            60,
+        )
+
+        self.assertEqual(
+            len(detail["blocks"]),
+            2,
         )
 
         self.assertTrue(
-            duplication_result.detail["reason"],
+            all(
+                block["file"].endswith("single.py")
+                for block in detail["blocks"]
+            ),
         )

@@ -1,3 +1,4 @@
+import ast
 import io
 import re
 import tokenize
@@ -14,6 +15,78 @@ from .loc import LOCEngine
 # statement structure is preserved by the presence of the markers.
 _INDENT_MARKER = "<INDENT>"
 _DEDENT_MARKER = "<DEDENT>"
+
+# Human-readable labels for the AST construct a duplicated region
+# resolves to. The exact physical lines stay authoritative: these
+# labels are the best-effort explainability the region maps to, so
+# the `kind` field (and its sibling `entity`/`entity_type`/
+# `class_name`) lets the UI answer "what was repeated — a function,
+# a class, a loop, an if/else — and where".
+_PLAIN_STATEMENT_KINDS = {
+    ast.Assign: "assignment",
+    ast.AnnAssign: "assignment",
+    ast.AugAssign: "assignment",
+    ast.Expr: "expression",
+    ast.Return: "return statement",
+    ast.Raise: "raise statement",
+    ast.Import: "import statement",
+    ast.ImportFrom: "import statement",
+    ast.Delete: "delete statement",
+    ast.Assert: "assert statement",
+    ast.Pass: "pass statement",
+    ast.Break: "break statement",
+    ast.Continue: "continue statement",
+    ast.Global: "global statement",
+    ast.Nonlocal: "nonlocal statement",
+}
+
+
+def _construct_kind(node: ast.stmt) -> str:
+    """Human label of one AST statement (compound or plain).
+
+    Async variants are checked first because they subclass their
+    sync counterparts (`ast.AsyncFor` *is an* `ast.For`).
+    """
+    if isinstance(node, ast.AsyncFor):
+        return "async for loop"
+
+    if isinstance(node, ast.For):
+        return "for loop"
+
+    if isinstance(node, ast.AsyncWith):
+        return "async with block"
+
+    if isinstance(node, ast.With):
+        return "with block"
+
+    if isinstance(node, ast.While):
+        return "while loop"
+
+    if isinstance(node, ast.If):
+        return "if/elif/else"
+
+    if isinstance(node, ast.Try):
+        return "try/except"
+
+    if isinstance(node, ast.Match):
+        return "match statement"
+
+    for cls, label in _PLAIN_STATEMENT_KINDS.items():
+        if isinstance(node, cls):
+            return label
+
+    return "statement"
+
+
+def _is_named_construct(node) -> bool:
+    return isinstance(
+        node,
+        (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+    )
+
+
+def _node_end(node) -> int:
+    return getattr(node, "end_lineno", node.lineno)
 
 # Hash parameters for the Rabin-Karp rolling hash (collisions are
 # verified away by direct comparison before trusting a match).
@@ -38,7 +111,7 @@ def _strip_string_prefix(text: str) -> str:
 
 class DuplicationEngine(BaseMetricEngine):
     """
-    Duplication (SonarQube semantics, per `docs/Duplication %.md`).
+    Duplication (SonarQube semantics, per `docs/Duplication.md`).
 
     Token streams are built with the standard-library `tokenize`
     module and compared across the analyzed files (project Input).
@@ -53,24 +126,54 @@ class DuplicationEngine(BaseMetricEngine):
     100) groups candidate starts; each group is verified by direct
     comparison and expanded left/right to the maximal common repeat;
     a clone group is kept only when every occurrence spans at least
-    `MIN_LINES` (default 10) distinct physical lines. Measures:
+    `MIN_LINES` (default 10) distinct physical lines. Groups are then
+    canonicalized (`_canonicalize_clones`): a group whose every
+    occurrence already lies inside the occurrences of an earlier
+    (longest-first) kept group is dropped — this removes the
+    *rotation* artifacts of periodic files (a 72-line unit copied
+    twelve times also matches at lines 49–120, 50–121, …) and nested
+    inner repeats, so `duplicated_blocks` counts the maximal repeated
+    sequences. Measures:
 
-      duplicated_blocks = number of clone groups
+      duplicated_blocks = number of canonical clone groups
       duplicated_lines  = union of physical lines in duplicated
                           blocks (each line counted once per file)
       duplicated_tokens = tokens lying inside duplicated blocks
       Duplication     = duplicated_lines / lines_of_code * 100,
-                          where lines_of_code is the source-lines
-                          count from the existing LOC engine (Radon
-                          sloc) over the successfully tokenized files
+                          where lines_of_code is the physical-line
+                          count over the successfully tokenized
+                          files (Radon `loc`) — the SonarQube
+                          formula's `lines` denominator, which keeps
+                          the ratio in [0, 100] even when duplicated
+                          regions cover comment/blank lines
 
-    Scope/completeness (ADR-0001): on `single_file` Input the metric
-    is `not_applicable` with a human-readable reason — a value is
-    never fabricated for an Input with nothing to compare. On
-    `project` Input the measure is computed with `completeness: full`
-    when every file tokenizes, `partial` (with a reason) when a file
-    fails to tokenize — its lines and tokens are excluded, never
-    assumed.
+    Explainable findings: each occurrence in `blocks` is enriched
+    from the file's AST so the UI (and the AI prompt) can say *what*
+    was repeated and *where*: `group`/`ordinal`/`copies` tie the
+    occurrences of one clone group together (which copies are
+    duplicates of each other), and `entity`/`entity_type`/
+    `class_name`/`kind` name the nearest containing function/class
+    (or "module") plus the construct the region itself is — a whole
+    function/method/class, a single statement like a for/while/if-
+    elif-else block, or a `statements` sequence. Region lines are
+    token boundaries and the construct labels are best-effort: the
+    exact `start_line`/`end_line` are always authoritative.
+
+    Scope/completeness (ADR-0001): the metric runs at any scope and
+    never assumes code outside the analyzed input. On `project`
+    input every file's token stream joins a single comparison
+    stream. On `single_file` input the file is self-compared: only
+    repeated code inside that file (two or more non-overlapping
+    occurrences) can match, so a lone function with no internal
+    repetition reports density 0.0 — a value is never fabricated
+    for an Input with nothing to compare. `completeness` is `full`
+    when every file tokenizes and `partial` (with a reason) when a
+    file fails to tokenize — its lines and tokens are excluded,
+    never assumed. A file that tokenizes but fails to `ast.parse`
+    still joins the comparison (its duplication value is real);
+    its occurrences carry no entity/kind attribution (those fields
+    are null) and the file is listed in `unattributed_files`, so
+    the UI can explain why instead of showing silent dashes.
     """
 
     MIN_TOKENS = 100
@@ -102,25 +205,10 @@ class DuplicationEngine(BaseMetricEngine):
             python_files: list[Path],
             scope: str | None = None,
     ) -> dict:
-        if scope == "single_file":
-            return {
-                "metric": "DUPLICATION",
-                "scope": "single_file",
-                "completeness": "not_applicable",
-                "reason": (
-                    "Duplication compares token streams across the "
-                    "analyzed files — not applicable to a "
-                    "single-file input."
-                ),
-                "lines_of_code": 0,
-                "duplicated_lines": 0,
-                "duplicated_blocks": 0,
-                "duplicated_tokens": 0,
-                "density": None,
-                "clones": [],
-                "blocks": [],
-            }
-
+        # Single-file inputs are analyzed too: the file is compared
+        # against itself, so repeated code inside it is reported
+        # (e.g. one function copied twice). Without internal
+        # repetition the density is 0.0 with `completeness: full`.
         return self._analyze_project(
             python_files,
             scope,
@@ -136,10 +224,15 @@ class DuplicationEngine(BaseMetricEngine):
         stream = []
         successful_files = []
         failed_files = []
+        unattributed_files = []
+        indexes = {}
 
         for file_path in python_files:
             try:
-                tokens = self._tokenize_file(file_path)
+                source_code = file_path.read_text(
+                    encoding="utf-8"
+                )
+                tokens = self._tokenize_source(source_code)
             except (
                     tokenize.TokenError,
                     IndentationError,
@@ -151,6 +244,13 @@ class DuplicationEngine(BaseMetricEngine):
                 continue
 
             successful_files.append(file_path)
+
+            tree = self._parse_source(source_code)
+
+            if tree is None:
+                unattributed_files.append(str(file_path))
+            else:
+                indexes[str(file_path)] = self._build_index(tree)
 
             stream.extend(
                 {
@@ -167,12 +267,17 @@ class DuplicationEngine(BaseMetricEngine):
         duplicated_lines = set()
         duplicated_token_indices = set()
 
-        for clone in clones:
+        for group_index, clone in enumerate(clones):
             length = clone["length"]
+            starts = clone["starts"]
+            copies = len(starts)
 
             occurrences = []
 
-            for start in clone["starts"]:
+            for ordinal, start in enumerate(
+                    starts,
+                    start=1,
+            ):
                 end = start + length - 1
 
                 start_line = stream[start]["line"]
@@ -183,13 +288,24 @@ class DuplicationEngine(BaseMetricEngine):
 
                 file_name = stream[start]["file"]
 
-                occurrences.append(
-                    {
-                        "file": file_name,
-                        "start_line": start_line,
-                        "end_line": end_line,
-                    }
+                block = {
+                    "file": file_name,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "group": group_index,
+                    "copies": copies,
+                    "ordinal": ordinal,
+                }
+
+                block.update(
+                    self._region_attribution(
+                        indexes.get(file_name),
+                        start_line,
+                        end_line,
+                    )
                 )
+
+                occurrences.append(block)
 
                 for line in range(start_line, end_line + 1):
                     duplicated_lines.add(
@@ -241,16 +357,30 @@ class DuplicationEngine(BaseMetricEngine):
                 f"line count: {'; '.join(failed_files)}"
             )
 
+        if unattributed_files:
+            detail["unattributed_files"] = unattributed_files
+
         return detail
 
-    # ---- Tokenizer ----
+    # ---- Tokenizer / parser ----
 
-    def _tokenize_file(
+    @staticmethod
+    def _parse_source(source_code: str) -> ast.Module | None:
+        """
+        Best-effort AST parse for the entity/kind attribution of
+        duplicated regions. A file that tokenizes but does not parse
+        still participates in duplication detection — its blocks are
+        simply reported without attribution (null fields).
+        """
+        try:
+            return ast.parse(source_code)
+        except (SyntaxError, ValueError):
+            return None
+
+    def _tokenize_source(
             self,
-            file_path: Path,
+            source_code: str,
     ) -> list[tuple[str, int]]:
-        source_code = file_path.read_text(encoding="utf-8")
-
         tokens = []
 
         for token in tokenize.generate_tokens(
@@ -291,6 +421,219 @@ class DuplicationEngine(BaseMetricEngine):
             return _strip_string_prefix(text)
 
         return text
+
+    # ---- Region attribution (AST explainability) ----
+
+    def _build_index(self, tree: ast.Module) -> dict:
+        """
+        Per-file AST index used to attribute duplicated regions to
+        named constructs: the node→parent map (a function defined
+        directly in a class body is a method) plus every function/
+        method/class node in the file.
+        """
+        parents = {}
+        named = []
+
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+
+        for node in ast.walk(tree):
+            if _is_named_construct(node):
+                named.append(node)
+
+        return {
+            "root": tree,
+            "parents": parents,
+            "named": named,
+        }
+
+    @staticmethod
+    def _entity_fields(
+            node,
+            parents: dict,
+    ) -> tuple[str, str, str | None]:
+        """
+        The explainable-detail entity triple for a named construct:
+        a function defined directly in a class body is a method (with
+        its containing class); module-level and nested functions are
+        plain functions; a class names itself.
+        """
+        if isinstance(node, ast.ClassDef):
+            return (node.name, "class", None)
+
+        if isinstance(parents.get(node), ast.ClassDef):
+            return (node.name, "method", parents[node].name)
+
+        return (node.name, "function", None)
+
+    def _child_bodies(self, node) -> list[list[ast.stmt]]:
+        """The statement bodies nested directly inside a node."""
+        bodies = []
+
+        if isinstance(
+                node,
+                (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+        ):
+            bodies.append(node.body)
+
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            bodies.append(node.body)
+            if node.orelse:
+                bodies.append(node.orelse)
+
+        elif isinstance(node, ast.If):
+            bodies.append(node.body)
+            if node.orelse:
+                bodies.append(node.orelse)
+
+        elif isinstance(node, ast.Try):
+            bodies.append(node.body)
+            bodies.extend(
+                handler.body
+                for handler in node.handlers
+            )
+            if node.orelse:
+                bodies.append(node.orelse)
+            if node.finalbody:
+                bodies.append(node.finalbody)
+
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            bodies.append(node.body)
+
+        elif isinstance(node, ast.Match):
+            bodies.extend(
+                case.body
+                for case in node.cases
+            )
+
+        return bodies
+
+    def _collect_contained_statements(
+            self,
+            statements: list[ast.stmt],
+            start_line: int,
+            end_line: int,
+            out: list[ast.stmt],
+    ) -> None:
+        """
+        The statement nodes fully contained in the region [start_line,
+        end_line], measured at the region's own nesting level (a
+        contained compound is recorded and its nested statements are
+        not descended into).
+        """
+        for stmt in statements:
+            end = _node_end(stmt)
+
+            if stmt.lineno >= start_line and end <= end_line:
+                out.append(stmt)
+                continue
+
+            # The statement intersects the region without being fully
+            # inside it — descend into its nested bodies so a
+            # duplicated inner block is still attributed.
+            if stmt.lineno <= end_line and end >= start_line:
+                for body in self._child_bodies(stmt):
+                    self._collect_contained_statements(
+                        body,
+                        start_line,
+                        end_line,
+                        out,
+                    )
+
+    def _region_attribution(
+            self,
+            index: dict | None,
+            start_line: int,
+            end_line: int,
+    ) -> dict:
+        """
+        Entity + kind fields for one duplicated occurrence.
+
+        `kind` describes the construct the region itself is:
+          - "function"/"method"/"class" when the region is one whole
+            named construct (its header lies inside the region);
+          - the label of a single contained statement (a for/while
+            loop, if/elif/else, try/except, with block, an
+            assignment, …);
+          - "statements" for a sequence of statements — including a
+            whole duplicated file and a duplicated body whose
+            headers differ (the two copies then keep their own
+            enclosing entity names).
+
+        `entity`/`entity_type`/`class_name` name the nearest
+        containing function/method/class, or the module when the
+        region sits at module level (entity None, entity_type
+        "module"). All four fields are None only when the file did
+        not parse. The physical `start_line`/`end_line` of the
+        occurrence are always authoritative over these labels.
+        """
+        if index is None:
+            return {
+                "entity": None,
+                "entity_type": None,
+                "class_name": None,
+                "kind": None,
+            }
+
+        contained = []
+        self._collect_contained_statements(
+            index["root"].body,
+            start_line,
+            end_line,
+            contained,
+        )
+
+        if (
+                len(contained) == 1
+                and _is_named_construct(contained[0])
+        ):
+            entity, entity_type, class_name = self._entity_fields(
+                contained[0],
+                index["parents"],
+            )
+
+            return {
+                "entity": entity,
+                "entity_type": entity_type,
+                "class_name": class_name,
+                "kind": entity_type,
+            }
+
+        enclosing = [
+            node
+            for node in index["named"]
+            if node.lineno <= start_line
+            and _node_end(node) >= end_line
+        ]
+
+        if len(contained) == 1:
+            kind = _construct_kind(contained[0])
+        else:
+            kind = "statements"
+
+        if enclosing:
+            innermost = max(
+                enclosing,
+                key=lambda node: node.lineno,
+            )
+            entity, entity_type, class_name = self._entity_fields(
+                innermost,
+                index["parents"],
+            )
+        else:
+            entity, entity_type, class_name = (
+                None,
+                "module",
+                None,
+            )
+
+        return {
+            "entity": entity,
+            "entity_type": entity_type,
+            "class_name": class_name,
+            "kind": kind,
+        }
 
     # ---- Clone detection ----
 
@@ -379,7 +722,109 @@ class DuplicationEngine(BaseMetricEngine):
             )
         )
 
-        return clones
+        return self._canonicalize_clones(
+            clones,
+            stream,
+        )
+
+    def _canonicalize_clones(
+            self,
+            clones: list[dict],
+            stream: list[dict],
+    ) -> list[dict]:
+        """
+        Drop redundant clone groups so `duplicated_blocks` counts the
+        maximal repeated sequences, never their phase shifts or inner
+        repetitions.
+
+        A periodic file (e.g. twelve copies of one 72-line unit)
+        produces, next to the real copy of the unit, dozens of
+        *rotation* groups: equal-length windows that start inside one
+        copy and run over the boundary into the next (lines 49–120,
+        50–121, …). Every such occurrence is already covered by the
+        occurrences of the copy itself, so the group adds no new
+        duplicated content. Clone groups are processed longest-first
+        (ties by earliest start); a group is kept only when at least
+        one of its occurrences extends beyond the token intervals
+        already covered by kept groups for that file. Coverage is per
+        file, so two independently duplicated chunks in different
+        regions (or files) are both kept.
+        """
+        kept = []
+        covered_by_file = {}
+
+        for clone in clones:
+            length = clone["length"]
+            spans_by_file = defaultdict(list)
+
+            for start in clone["starts"]:
+                file_name = stream[start]["file"]
+                spans_by_file[file_name].append(
+                    (start, start + length - 1)
+                )
+
+            if all(
+                    self._spans_are_covered(
+                        spans,
+                        covered_by_file.get(file_name, []),
+                    )
+                    for file_name, spans in spans_by_file.items()
+            ):
+                continue
+
+            kept.append(clone)
+
+            for file_name, spans in spans_by_file.items():
+                covered_by_file[file_name] = self._merge_spans(
+                    covered_by_file.get(file_name, []),
+                    spans,
+                )
+
+        return kept
+
+    @staticmethod
+    def _spans_are_covered(
+            spans: list[tuple[int, int]],
+            merged_intervals: list[tuple[int, int]],
+    ) -> bool:
+        """
+        True when every [start, end] span lies fully inside one of
+        the already-merged kept intervals of the same file.
+        """
+        if not merged_intervals:
+            return False
+
+        for start, end in spans:
+            if not any(
+                    low <= start and end <= high
+                    for low, high in merged_intervals
+            ):
+                return False
+
+        return True
+
+    @staticmethod
+    def _merge_spans(
+            intervals: list[tuple[int, int]],
+            extra: list[tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        """Sorted, merged token intervals (adjacent spans merge)."""
+        combined = sorted(intervals + extra)
+        merged = []
+
+        for start, end in combined:
+            if (
+                    merged
+                    and start <= merged[-1][1] + 1
+            ):
+                merged[-1] = (
+                    merged[-1][0],
+                    max(merged[-1][1], end),
+                )
+            else:
+                merged.append((start, end))
+
+        return merged
 
     def _window_hashes(
             self,
@@ -611,13 +1056,22 @@ class DuplicationEngine(BaseMetricEngine):
 
         return True
 
-    # ---- Lines of code ----
+    # ---- Denominator (physical lines) ----
 
     def _lines_of_code(
             self,
             python_files: list[Path],
             scope: str | None,
     ) -> int:
+        """
+        The density denominator: the number of physical lines over
+        the successfully tokenized files (radon `loc` — comments and
+        blank lines included), matching the SonarQube formula
+        `duplicated_lines_density = duplicated_lines / lines * 100`,
+        whose `lines` is the physical-line measure. Using physical
+        lines keeps the ratio inside [0, 100] even when a duplicated
+        region covers comment/blank lines.
+        """
         if not python_files:
             return 0
 
@@ -626,4 +1080,4 @@ class DuplicationEngine(BaseMetricEngine):
             scope,
         )
 
-        return detail["totals"]["sloc"]
+        return detail["totals"]["loc"]

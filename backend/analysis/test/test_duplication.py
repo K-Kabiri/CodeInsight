@@ -66,26 +66,39 @@ def analyze(
 
 
 class SingleFileInputTest(SimpleTestCase):
+    """
+    A single-file input is analyzed by comparing the file's own
+    token stream against itself (ADR-0001): only repeated code
+    inside that file can match, so nothing outside the input is
+    ever assumed.
+    """
 
-    def test_single_file_is_not_applicable(self):
+    def test_single_file_without_internal_repetition_is_zero(self):
         detail = analyze(
-            {"a.py": DUPLICATE_FN},
+            {"a.py": DUPLICATE_FN + UNIQUE_FN},
             scope="single_file",
             min_tokens=10,
             min_lines=2,
         )
 
         self.assertEqual(
+            detail["scope"],
+            "single_file",
+        )
+
+        self.assertEqual(
             detail["completeness"],
-            "not_applicable",
+            "full",
         )
 
-        self.assertTrue(
-            detail["reason"],
+        self.assertNotIn(
+            "reason",
+            detail,
         )
 
-        self.assertIsNone(
+        self.assertEqual(
             detail["density"],
+            0.0,
         )
 
         self.assertEqual(
@@ -93,7 +106,138 @@ class SingleFileInputTest(SimpleTestCase):
             0,
         )
 
-        engine = DuplicationEngine()
+        self.assertEqual(
+            detail["duplicated_lines"],
+            0,
+        )
+
+        self.assertEqual(
+            detail["lines_of_code"],
+            7,
+        )
+
+    def test_single_file_detects_function_copied_twice(self):
+        # The same function appears twice inside the one analyzed
+        # file: both occurrences live in that file and both count.
+        detail = analyze(
+            {"a.py": DUPLICATE_FN + "\n" + DUPLICATE_FN},
+            scope="single_file",
+            min_tokens=10,
+            min_lines=2,
+        )
+
+        self.assertEqual(
+            detail["completeness"],
+            "full",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            detail["duplicated_lines"],
+            10,
+        )
+
+        self.assertEqual(
+            detail["duplicated_tokens"],
+            48,
+        )
+
+        self.assertEqual(
+            detail["lines_of_code"],
+            11,
+        )
+
+        # Physical-line denominator (SonarQube `lines`): the blank
+        # separator line between the two copies is not duplicated but
+        # is part of the denominator, so the density stays < 100.
+        self.assertAlmostEqual(
+            detail["density"],
+            10 / 11 * 100,
+        )
+
+        self.assertEqual(
+            len(detail["blocks"]),
+            2,
+        )
+
+        for block in detail["blocks"]:
+            self.assertTrue(
+                block["file"].endswith("a.py"),
+                block,
+            )
+            self.assertEqual(
+                block["end_line"] - block["start_line"] + 1,
+                5,
+            )
+            # The duplicated construct is the whole function
+            # `compute`, repeated twice in the one file: both
+            # occurrences share the clone group and carry the same
+            # explainable entity/kind attribution.
+            self.assertEqual(
+                block["group"],
+                0,
+            )
+            self.assertEqual(
+                block["copies"],
+                2,
+            )
+            self.assertEqual(
+                block["entity"],
+                "compute",
+            )
+            self.assertEqual(
+                block["entity_type"],
+                "function",
+            )
+            self.assertEqual(
+                block["kind"],
+                "function",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+        self.assertEqual(
+            {block["ordinal"] for block in detail["blocks"]},
+            {1, 2},
+        )
+
+    def test_single_file_unparsable_reports_partial(self):
+        detail = analyze(
+            {"a.py": "def broken(:\n"},
+            scope="single_file",
+            min_tokens=10,
+            min_lines=2,
+        )
+
+        self.assertEqual(
+            detail["completeness"],
+            "partial",
+        )
+
+        self.assertTrue(
+            detail["reason"],
+        )
+
+        self.assertEqual(
+            detail["density"],
+            0.0,
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            0,
+        )
+
+    def test_single_file_calculate_returns_density(self):
+        engine = DuplicationEngine(
+            min_tokens=10,
+            min_lines=2,
+        )
 
         with tempfile.NamedTemporaryFile(
                 suffix=".py",
@@ -101,7 +245,9 @@ class SingleFileInputTest(SimpleTestCase):
                 mode="w",
                 encoding="utf-8",
         ) as temp_file:
-            temp_file.write(DUPLICATE_FN)
+            temp_file.write(
+                DUPLICATE_FN + "\n" + DUPLICATE_FN
+            )
             path = Path(temp_file.name)
 
         try:
@@ -112,8 +258,9 @@ class SingleFileInputTest(SimpleTestCase):
         finally:
             path.unlink()
 
-        self.assertIsNone(
+        self.assertAlmostEqual(
             value,
+            10 / 11 * 100,
         )
 
 
@@ -169,6 +316,37 @@ class CrossFileDuplicationTest(SimpleTestCase):
                 block["end_line"] - block["start_line"] + 1,
                 5,
             )
+            # The copied construct is the whole function `compute`
+            # (one occurrence per file) — both rows carry the same
+            # clone group, entity and kind.
+            self.assertEqual(
+                block["group"],
+                0,
+            )
+            self.assertEqual(
+                block["copies"],
+                2,
+            )
+            self.assertEqual(
+                block["entity"],
+                "compute",
+            )
+            self.assertEqual(
+                block["entity_type"],
+                "function",
+            )
+            self.assertEqual(
+                block["kind"],
+                "function",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+        self.assertEqual(
+            {block["ordinal"] for block in detail["blocks"]},
+            {1, 2},
+        )
 
     def test_no_duplication(self):
         detail = analyze(
@@ -529,6 +707,399 @@ class DuplicationEngineTest(SimpleTestCase):
         )
 
 
+class ExplainableBlockDetailTest(SimpleTestCase):
+    """
+    Every duplicated occurrence carries the explainable-detail fields
+    so the UI can say *what* was repeated and *where*: `group`/
+    `ordinal`/`copies` tie the copies of one clone group together,
+    and `entity`/`entity_type`/`class_name`/`kind` name the
+    duplicated construct and its containing function/class.
+    """
+
+    def test_renamed_function_copies_are_attributed_to_each_own_name(self):
+        # Two functions share an identical signature and body but have
+        # different names. The maximal repeat covers the whole def
+        # (the token match bridges from the header's closing parens
+        # through the body), so each occurrence is attributed to its
+        # own function with kind "function" — the user sees "function
+        # alpha is a copy of function beta" instead of anonymous lines.
+        body = "".join(
+            f"    v{i} = 0\n"
+            for i in range(30)
+        ) + "    return v0\n"
+
+        detail = analyze(
+            {
+                "a.py": (
+                    "def alpha():\n"
+                    + body
+                    + "\n"
+                    "def beta():\n"
+                    + body
+                ),
+            },
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            [block["entity"] for block in detail["blocks"]],
+            ["alpha", "beta"],
+        )
+
+        for block in detail["blocks"]:
+            self.assertEqual(
+                block["entity_type"],
+                "function",
+            )
+            self.assertEqual(
+                block["kind"],
+                "function",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+    def test_duplicated_loop_inside_a_function_is_kind_for_loop(self):
+        # The same for-loop is copied twice inside one function: each
+        # occurrence is the whole loop (kind "for loop") living inside
+        # `wrap`.
+        loop = (
+            "    for i in range(20):\n"
+            + "".join(
+                f"        v{i} = i + {i}\n"
+                for i in range(26)
+            )
+        )
+
+        detail = analyze(
+            {
+                "a.py": (
+                    "def wrap():\n"
+                    + loop
+                    + "    marker = 1\n"
+                    + loop
+                ),
+            },
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        for block in detail["blocks"]:
+            self.assertEqual(
+                block["entity"],
+                "wrap",
+            )
+            self.assertEqual(
+                block["entity_type"],
+                "function",
+            )
+            self.assertEqual(
+                block["kind"],
+                "for loop",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+    def test_duplicated_methods_within_a_class_carry_method_and_class(self):
+        # The same method (signature + body, different name) is copied
+        # twice inside one class: the whole def is the repeated
+        # construct, each occurrence is a *method* and its class_name
+        # is the owning class.
+        method = (
+            "    def handle(self, x):\n"
+            "        total = 0\n"
+            + "".join(
+                f"        total += v{i}\n"
+                for i in range(10)
+            )
+            + "        return total\n"
+        )
+
+        renamed = method.replace(
+            "def handle(self, x):",
+            "def helper(self, x):",
+        )
+
+        detail = analyze(
+            {
+                "a.py": (
+                    "class Service:\n"
+                    + method
+                    + renamed
+                ),
+            },
+            scope="single_file",
+            min_tokens=20,
+            min_lines=2,
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            [block["entity"] for block in detail["blocks"]],
+            ["handle", "helper"],
+        )
+
+        for block in detail["blocks"]:
+            self.assertEqual(
+                block["entity_type"],
+                "method",
+            )
+            self.assertEqual(
+                block["kind"],
+                "method",
+            )
+            self.assertEqual(
+                block["class_name"],
+                "Service",
+            )
+
+    def test_whole_class_copy_across_files_is_kind_class(self):
+        detail = analyze(
+            {
+                "a.py": (
+                    "class Service:\n"
+                    "    def run(self):\n"
+                    "        return 1\n"
+                    "\n"
+                    "    def stop(self):\n"
+                    "        return 2\n"
+                ),
+                "b.py": (
+                    "class Service:\n"
+                    "    def run(self):\n"
+                    "        return 1\n"
+                    "\n"
+                    "    def stop(self):\n"
+                    "        return 2\n"
+                ),
+            },
+            min_tokens=10,
+            min_lines=2,
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        for block in detail["blocks"]:
+            self.assertEqual(
+                block["entity"],
+                "Service",
+            )
+            self.assertEqual(
+                block["entity_type"],
+                "class",
+            )
+            self.assertEqual(
+                block["kind"],
+                "class",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+    def test_module_level_duplication_is_attributed_to_the_module(self):
+        # A repeated block of top-level statements has no containing
+        # function/class: the module is the entity and the construct
+        # is a statement sequence.
+        module_block = "".join(
+            f"x{i} = {i}\n"
+            for i in range(30)
+        )
+
+        detail = analyze(
+            {
+                "a.py": module_block + "\n" + module_block,
+            },
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        for block in detail["blocks"]:
+            self.assertIsNone(
+                block["entity"],
+            )
+            self.assertEqual(
+                block["entity_type"],
+                "module",
+            )
+            self.assertEqual(
+                block["kind"],
+                "statements",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+
+class CanonicalizationTest(SimpleTestCase):
+    """
+    `_canonicalize_clones` keeps only the maximal repeated sequences.
+    A periodic file (one unit repeated many times) also matches in
+    rotated windows that start inside a copy and cross the boundary
+    into the next one — those groups add no new duplicated content
+    and must not inflate `duplicated_blocks`.
+    """
+
+    def test_repeated_unit_is_reported_as_one_canonical_group(self):
+        unit = (
+            "def unit_0():\n"
+            + "".join(
+                f"    v{i} = {i}\n"
+                for i in range(28)
+            )
+            + "    return v0\n"
+        )
+
+        # Six byte-identical copies inside one file (with blank
+        # separators). The only real duplicated content is the unit
+        # itself, copied six times.
+        detail = analyze(
+            {"a.py": "\n".join([unit] * 6)},
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        blocks = detail["blocks"]
+
+        self.assertEqual(
+            len(blocks),
+            6,
+        )
+
+        self.assertEqual(
+            {block["copies"] for block in blocks},
+            {6},
+        )
+
+        self.assertEqual(
+            {block["ordinal"] for block in blocks},
+            set(range(1, 7)),
+        )
+
+        # One entity: the unit itself, in each of its copies.
+        self.assertEqual(
+            {block["entity"] for block in blocks},
+            {"unit_0"},
+        )
+
+        self.assertEqual(
+            {block["entity_type"] for block in blocks},
+            {"function"},
+        )
+
+    def test_nested_inner_repeats_do_not_add_blocks(self):
+        # Two identical inner segments inside each copy of a repeated
+        # chunk: the inner repeats are already covered by the chunk's
+        # own occurrences, so only the chunk is a duplicated block.
+        inner = "".join(
+            f"        w{i} = i\n"
+            for i in range(28)
+        )
+        chunk = (
+            "def chunk_0():\n"
+            "    for i in range(3):\n"
+            + inner
+            + "    for i in range(3):\n"
+            + inner
+        )
+
+        detail = analyze(
+            {"a.py": "\n".join([chunk, chunk])},
+            scope="single_file",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            len(detail["blocks"]),
+            2,
+        )
+
+        self.assertEqual(
+            {block["entity"] for block in detail["blocks"]},
+            {"chunk_0"},
+        )
+
+
+class ParseFailureAttributionTest(SimpleTestCase):
+
+    def test_parse_failing_file_is_listed_with_null_attribution(self):
+        # Tokenizable but not parseable (missing body after `while`):
+        # duplication itself is real and reported, the file is listed
+        # in `unattributed_files`, and entity/kind stay null instead
+        # of being guessed.
+        broken = (
+            "def broken(x):\n"
+            "    while x\n"
+            "    total = 1\n"
+            "    return total\n"
+        )
+
+        detail = analyze(
+            {"a.py": broken + "\n" + broken},
+            scope="single_file",
+            min_tokens=10,
+            min_lines=2,
+        )
+
+        self.assertEqual(
+            detail["completeness"],
+            "full",
+        )
+
+        self.assertEqual(
+            detail["duplicated_blocks"],
+            1,
+        )
+
+        self.assertEqual(
+            len(detail["unattributed_files"]),
+            1,
+        )
+
+        self.assertTrue(
+            detail["unattributed_files"][0].endswith("a.py"),
+        )
+
+        for block in detail["blocks"]:
+            self.assertIsNone(
+                block["entity"],
+            )
+            self.assertIsNone(
+                block["entity_type"],
+            )
+            self.assertIsNone(
+                block["kind"],
+            )
+
+
 class DuplicationMetricSeedTest(TestCase):
 
     def test_duplication_definition_is_seeded(self):
@@ -538,7 +1109,7 @@ class DuplicationMetricSeedTest(TestCase):
 
         self.assertEqual(
             definition.display_name,
-            "Duplication %",
+            "Duplication",
         )
 
         self.assertEqual(
