@@ -269,6 +269,51 @@ def _run_bandit(python_files: list[Path]) -> str:
     )
 
 
+def _validate_tool_run(
+        returncode: int,
+        stdout: str,
+        stderr: str,
+        tool_name: str,
+) -> str:
+    """
+    Turn a finished tool invocation into its stdout, or raise a
+    clear error.
+
+    Ruff and Bandit exit 1 when findings exist — stdout still
+    carries the machine-readable output — so exit codes 0 and 1
+    both mean "the tool ran". Any other exit code is a tool
+    failure.
+
+    A healthy tool always writes its JSON report to stdout — a
+    no-findings run still prints text (Ruff prints `[]`, Bandit a
+    report with empty `results`) — so an empty stdout means the
+    tool did not actually run. The common case is `python -m
+    <tool>` when the module is not installed: CPython exits 1 (the
+    same code as a findings run) with "No module named <tool>" on
+    stderr. Surface that as a clear error instead of letting the
+    JSON parsers choke on the empty string with an opaque
+    "Expecting value" decode error.
+    """
+    if returncode not in (0, 1):
+        raise RuntimeError(
+            f"{tool_name} failed (exit {returncode}): "
+            f"{stderr.strip()}"
+        )
+
+    if not stdout.strip():
+        if "No module named" in stderr:
+            raise RuntimeError(
+                f"{tool_name} is not installed — add it to the "
+                "runtime requirements."
+            )
+        raise RuntimeError(
+            f"{tool_name} produced no output (exit {returncode}): "
+            f"{stderr.strip()}"
+        )
+
+    return stdout
+
+
 def _run_tool(
         command: list[str],
         tool_name: str,
@@ -285,12 +330,9 @@ def _run_tool(
             "requirements."
         ) from exc
 
-    # Both tools exit 1 when findings exist; stdout still carries the
-    # machine-readable output. Any other exit code is a tool failure.
-    if completed.returncode not in (0, 1):
-        raise RuntimeError(
-            f"{tool_name} failed (exit {completed.returncode}): "
-            f"{completed.stderr.strip()}"
-        )
-
-    return completed.stdout
+    return _validate_tool_run(
+        completed.returncode,
+        completed.stdout,
+        completed.stderr,
+        tool_name,
+    )

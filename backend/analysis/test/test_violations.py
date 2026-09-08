@@ -6,6 +6,7 @@ from django.test import SimpleTestCase, TestCase
 from analysis.engines import ENGINE_REGISTRY, get_engine
 from analysis.engines.violations import (
     RuleViolationsEngine,
+    _validate_tool_run,
     add_snippets,
     build_detail,
     parse_bandit_output,
@@ -425,6 +426,87 @@ class RuleViolationsEngineTest(SimpleTestCase):
             engine,
             RuleViolationsEngine,
         )
+
+
+class ToolRunValidationTest(SimpleTestCase):
+    """
+    Exit-code handling of a finished tool invocation, tested with
+    synthetic returncode/stdout/stderr triples — no tool is ever
+    executed (ADR-0002).
+
+    The behavior that pinned this test: when a tool is missing,
+    `python -m <tool>` exits 1 (the same code as a findings run)
+    with an empty stdout, and the engine used to hand that empty
+    string to the JSON parsers, failing the metric with an opaque
+    `JSONDecodeError: Expecting value: line 1 column 1 (char 0)`
+    on every analysis.
+    """
+
+    def test_findings_run_exit_1_passes_stdout_through(self):
+        stdout = _validate_tool_run(
+            1,
+            '["F401 finding"]',
+            "",
+            "Ruff",
+        )
+
+        self.assertEqual(
+            stdout,
+            '["F401 finding"]',
+        )
+
+    def test_clean_run_exit_0_passes_stdout_through(self):
+        stdout = _validate_tool_run(
+            0,
+            "[]",
+            "",
+            "Ruff",
+        )
+
+        self.assertEqual(
+            stdout,
+            "[]",
+        )
+
+    def test_missing_module_raises_install_error(self):
+        # `python -m ruff` with ruff not installed: exit 1, empty
+        # stdout, "No module named ruff" on stderr. Must raise the
+        # same clear message as the FileNotFoundError branch, never
+        # return the empty stdout to the parser.
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Ruff is not installed",
+        ):
+            _validate_tool_run(
+                1,
+                "",
+                "No module named ruff",
+                "Ruff",
+            )
+
+    def test_empty_stdout_with_other_stderr_raises(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "no output.*boom",
+        ):
+            _validate_tool_run(
+                0,
+                "",
+                "boom",
+                "Bandit",
+            )
+
+    def test_failure_exit_code_raises(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"failed \(exit 2\)",
+        ):
+            _validate_tool_run(
+                2,
+                "",
+                "internal error",
+                "Bandit",
+            )
 
 
 class ViolationsMetricSeedTest(TestCase):
