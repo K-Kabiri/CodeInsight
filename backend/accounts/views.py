@@ -66,5 +66,7 @@ class MeView(APIView):
             {
                 "id": request.user.id,
                 "username": request.user.username,
+                "email": request.user.email,
+                "date_joined": request.user.date_joined.isoformat(),
             }
         )
