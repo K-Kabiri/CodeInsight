@@ -100,7 +100,12 @@ class MeEndpointTest(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.data,
-            {"id": self.user.id, "username": "alice"},
+            {
+                "id": self.user.id,
+                "username": "alice",
+                "email": "",
+                "date_joined": self.user.date_joined.isoformat(),
+            },
         )
 
     def test_invalid_token_is_rejected(self):
