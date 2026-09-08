@@ -99,7 +99,18 @@ CONTRACT = {
         "records": lambda detail: detail["blocks"],
         "name": "file",
         "line": "start_line",
-        "required": ("file", "start_line", "end_line"),
+        "required": (
+            "file",
+            "start_line",
+            "end_line",
+            "group",
+            "copies",
+            "ordinal",
+            "entity",
+            "entity_type",
+            "class_name",
+            "kind",
+        ),
     },
     "CODE_SMELLS": {
         # Full explainable-detail convention. entity is null where
@@ -339,6 +350,101 @@ class DetailContractTest(SimpleTestCase):
                         record,
                         f"{metric_name} record missing {field!r}",
                     )
+
+    def test_duplication_blocks_carry_entity_kind_and_group_evidence(self):
+        # The fixture duplicates one whole function (`duplicated`)
+        # across two files. Every block must say *what* was repeated
+        # (the function, with its kind) and *where* (file + lines),
+        # and the two copies of the same clone group must be tied
+        # together by group/ordinal/copies.
+        detail = self._detail("DUPLICATION")
+
+        blocks = CONTRACT["DUPLICATION"]["records"](detail)
+
+        self.assertEqual(
+            len(blocks),
+            2,
+        )
+
+        for block in blocks:
+            self.assertIn(
+                block["entity_type"],
+                (
+                    "function",
+                    "method",
+                    "class",
+                    "module",
+                    None,
+                ),
+            )
+
+            if block["entity_type"] in (
+                    "function",
+                    "method",
+                    "class",
+            ):
+                self.assertTrue(block["entity"])
+                self.assertTrue(block["kind"])
+            else:
+                self.assertIsNone(block["entity"])
+
+            self.assertIsInstance(
+                block["group"],
+                int,
+            )
+            self.assertGreaterEqual(
+                block["group"],
+                0,
+            )
+            self.assertIsInstance(
+                block["copies"],
+                int,
+            )
+            self.assertGreaterEqual(
+                block["copies"],
+                2,
+            )
+            self.assertIsInstance(
+                block["ordinal"],
+                int,
+            )
+            self.assertGreaterEqual(
+                block["ordinal"],
+                1,
+            )
+            self.assertLessEqual(
+                block["ordinal"],
+                block["copies"],
+            )
+
+            self.assertEqual(
+                block["entity"],
+                "duplicated",
+            )
+            self.assertEqual(
+                block["entity_type"],
+                "function",
+            )
+            self.assertEqual(
+                block["kind"],
+                "function",
+            )
+            self.assertIsNone(
+                block["class_name"],
+            )
+
+        self.assertEqual(
+            {block["group"] for block in blocks},
+            {0},
+        )
+        self.assertEqual(
+            {block["copies"] for block in blocks},
+            {2},
+        )
+        self.assertEqual(
+            {block["ordinal"] for block in blocks},
+            {1, 2},
+        )
 
     def test_cyclic_cycle_members_are_named_entities(self):
         detail = self._detail("CYCLIC")

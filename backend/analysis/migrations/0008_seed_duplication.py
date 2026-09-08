@@ -10,7 +10,7 @@ def seed_duplication(apps, schema_editor):
     MetricDefinition.objects.get_or_create(
         name="DUPLICATION",
         defaults={
-            "display_name": "Duplication %",
+            "display_name": "Duplication",
             "category": "Code Health",
             "description": (
                 "Token-based duplication following SonarQube "
@@ -21,7 +21,7 @@ def seed_duplication(apps, schema_editor):
                 "lines in duplicated blocks and the ratio is "
                 "duplicated_lines / lines_of_code x 100. Not "
                 "applicable to a single-file input (see "
-                "docs/Duplication %.md)."
+                "docs/Duplication.md)."
             ),
             "unit": "",
             "higher_is_better": False,

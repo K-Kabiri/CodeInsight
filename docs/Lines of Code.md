@@ -4,7 +4,7 @@
 
 **Lines of Code (LOC)** is a source-code size metric that measures the physical size of Python source files. In CodeInsight, LOC is the raw physical line count (`loc` in Radon's terms) summed across all analyzed files, and it is computed with the `radon.raw.analyze` function — **not** with a hand-written line counter.
 
-Alongside the headline LOC value, the engine stores the full set of Radon raw source-code metrics per file (source LOC, logical LOC, comments, blank lines, multiline strings), which are used elsewhere in the project (for example as the denominator of the Duplication % density).
+Alongside the headline LOC value, the engine stores the full set of Radon raw source-code metrics per file (source LOC, logical LOC, comments, blank lines, multiline strings), which are used elsewhere in the project (for example as the denominator of the Duplication density).
 
 ## 2. Purpose
 

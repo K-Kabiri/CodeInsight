@@ -74,7 +74,7 @@ CANONICAL_CATALOG = {
         "supports_llm": True,
     },
     "DUPLICATION": {
-        "display_name": "Duplication %",
+        "display_name": "Duplication",
         "category": "Code Health",
         "higher_is_better": False,
         "supports_llm": True,
