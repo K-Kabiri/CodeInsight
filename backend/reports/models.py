@@ -11,6 +11,14 @@ class AIReport(models.Model):
 
     summary = models.TextField()
 
+    # Structured per-metric content keyed by canonical metric name,
+    # each entry {"explanation": ..., "suggestions": [...]}. The overall
+    # prose stays in `summary`; existing rows default to an empty dict.
+    metric_content = models.JSONField(
+        default=dict,
+        blank=True,
+    )
+
     strengths = models.TextField(
         blank=True
     )

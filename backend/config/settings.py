@@ -150,3 +150,21 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ],
 }
+
+# LLM report generation (`.scratch/ai-report/`). The provider is
+# configured entirely from the environment via python-decouple; the
+# defaults point at the working z.ai/Zhipu OpenAI-compatible endpoint.
+# No key configured => the LLM seam reports a clear "not configured"
+# error instead of calling out.
+LLM_BASE_URL = config(
+    "LLM_BASE_URL",
+    default="https://open.bigmodel.cn/api/paas/v4/",
+)
+LLM_MODEL = config("LLM_MODEL", default="glm-4.5-flash")
+LLM_API_KEY = config("LLM_API_KEY", default="")
+LLM_TIMEOUT = config("LLM_TIMEOUT", default=60, cast=int)
+
+# Evidence bound for the AI prompt: beyond this many location-rich
+# findings the excerpt is dropped — never summarized into numbers that
+# were not computed (ADR-0001).
+LLM_DETAIL_BOUND = config("LLM_DETAIL_BOUND", default=30, cast=int)
