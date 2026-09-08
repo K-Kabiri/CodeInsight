@@ -179,6 +179,28 @@ class ProjectCrudTest(ProjectsApiTestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_delete_own_project_removes_versions(self):
+        project = self._create_project(self.alice_client)
+        response = self._upload(
+            self.alice_client,
+            project,
+            SimpleUploadedFile("main.py", b"print('hi')\n"),
+        )
+        self.assertEqual(response.status_code, 201)
+
+        response = self.alice_client.delete(
+            f"/api/projects/{project.id}/"
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(
+            Project.objects.filter(id=project.id).exists()
+        )
+        self.assertFalse(
+            ProjectVersion.objects.filter(
+                project_id=project.id
+            ).exists()
+        )
+
 
 class VersionUploadTest(ProjectsApiTestCase):
 

@@ -23,6 +23,13 @@ class Analysis(models.Model):
         default=Status.PENDING
     )
 
+    # Whether the caller asked for AI explanations on this run. Set at
+    # creation from the dialog checkbox; default False so existing rows
+    # and default paths are untouched.
+    ai_requested = models.BooleanField(
+        default=False
+    )
+
     started_at = models.DateTimeField(
         null=True,
         blank=True

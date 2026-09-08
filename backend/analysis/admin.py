@@ -4,8 +4,8 @@ from .models import Analysis, MetricDefinition, AnalysisMetric
 
 @admin.register(Analysis)
 class AnalysisAdmin(admin.ModelAdmin):
-    list_display = ("id", "project_version", "status", "overall_score", "created_at")
-    list_filter = ("status",)
+    list_display = ("id", "project_version", "status", "ai_requested", "overall_score", "created_at")
+    list_filter = ("status", "ai_requested")
     search_fields = ("project_version__project__name",)
 
 

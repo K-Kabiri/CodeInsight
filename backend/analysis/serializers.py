@@ -69,6 +69,7 @@ class AnalysisSerializer(serializers.ModelSerializer):
             "id",
             "project_version",
             "status",
+            "ai_requested",
             "started_at",
             "finished_at",
             "created_at",
@@ -92,7 +93,7 @@ class AnalysisCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Analysis
-        fields = ["project_version", "metrics"]
+        fields = ["project_version", "metrics", "ai_requested"]
 
     def validate_project_version(self, value):
         request = self.context["request"]
@@ -139,6 +140,7 @@ class AnalysisCreateSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             analysis = Analysis.objects.create(
                 project_version=validated_data["project_version"],
+                ai_requested=validated_data.get("ai_requested", False),
             )
 
             definitions = MetricDefinition.objects.filter(
