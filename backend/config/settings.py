@@ -163,6 +163,11 @@ LLM_BASE_URL = config(
 LLM_MODEL = config("LLM_MODEL", default="glm-4.5-flash")
 LLM_API_KEY = config("LLM_API_KEY", default="")
 LLM_TIMEOUT = config("LLM_TIMEOUT", default=60, cast=int)
+# Transient provider failures (HTTP 429/5xx, network errors, timeouts)
+# are retried with a capped exponential backoff when this is > 1. The
+# default keeps the seam single-shot unless a deployment opts in (the
+# test suite relies on the single-shot behaviour).
+LLM_RETRY_ATTEMPTS = config("LLM_RETRY_ATTEMPTS", default=1, cast=int)
 
 # Evidence bound for the AI prompt: beyond this many location-rich
 # findings the excerpt is dropped — never summarized into numbers that
