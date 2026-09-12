@@ -49,6 +49,10 @@ class LLMClientTest(SimpleTestCase):
             "model": "glm-4.5-flash",
             "api_key": "secret-key",
             "timeout": 7,
+            # These tests pin the single-shot seam regardless of the
+            # deployment's LLM_RETRY_ATTEMPTS; the retry contract is
+            # covered separately in LLMRetryTest.
+            "max_attempts": 1,
         }
         defaults.update(overrides)
         return LLMClient(**defaults)
@@ -184,3 +188,105 @@ class LLMClientTest(SimpleTestCase):
 
             with self.assertRaises(LLMRequestError):
                 client.chat([{"role": "user", "content": "hi"}])
+
+
+class LLMRetryTest(SimpleTestCase):
+    """
+    Transient provider failures (HTTP 429/5xx, network errors,
+    timeouts) are retried with a capped exponential backoff when
+    `max_attempts` is greater than 1, so rate-limit hiccups
+    self-heal. The sleep is patched so the suite never waits.
+    """
+
+    def _client(self, **overrides):
+        defaults = {
+            "base_url": "https://provider.example/v1/",
+            "model": "glm-4.5-flash",
+            "api_key": "secret-key",
+            "timeout": 7,
+            "max_attempts": 3,
+        }
+        defaults.update(overrides)
+        return LLMClient(**defaults)
+
+    def _http_error(self, code=429, reason="Too Many Requests"):
+        return urllib.error.HTTPError(
+            "https://provider.example/v1/chat/completions",
+            code,
+            reason,
+            None,
+            io.BytesIO(b"{}"),
+        )
+
+    def test_retries_429_then_succeeds(self):
+        client = self._client()
+
+        with mock.patch(
+                "reports.llm.urlopen",
+                side_effect=[
+                    self._http_error(),
+                    FakeResponse(_completion_body("ok after retry")),
+                ],
+        ) as fake_urlopen, mock.patch(
+                "reports.llm.sleep"
+        ) as fake_sleep:
+            content = client.chat([{"role": "user", "content": "hi"}])
+
+        self.assertEqual(content, "ok after retry")
+        self.assertEqual(fake_urlopen.call_count, 2)
+        fake_sleep.assert_called_once_with(1.0)
+
+    def test_gives_up_after_all_attempts_and_surfaces_status(self):
+        client = self._client()
+        error = self._http_error()
+
+        with mock.patch(
+                "reports.llm.urlopen",
+                side_effect=error,
+        ), mock.patch("reports.llm.sleep") as fake_sleep:
+            with self.assertRaises(LLMRequestError) as raised:
+                client.chat([{"role": "user", "content": "hi"}])
+
+        self.assertEqual(raised.exception.status_code, 429)
+        self.assertEqual(fake_sleep.call_count, 2)
+
+    def test_timeout_retried_then_succeeds(self):
+        client = self._client()
+
+        with mock.patch(
+                "reports.llm.urlopen",
+                side_effect=[
+                    TimeoutError("timed out"),
+                    FakeResponse(_completion_body("slow but ok")),
+                ],
+        ) as fake_urlopen, mock.patch(
+                "reports.llm.sleep"
+        ) as fake_sleep:
+            content = client.chat([{"role": "user", "content": "hi"}])
+
+        self.assertEqual(content, "slow but ok")
+        self.assertEqual(fake_urlopen.call_count, 2)
+        fake_sleep.assert_called_once_with(1.0)
+
+    def test_non_retryable_client_error_never_retried(self):
+        client = self._client()
+
+        with mock.patch(
+                "reports.llm.urlopen",
+                side_effect=self._http_error(400, "Bad Request"),
+        ) as fake_urlopen, mock.patch(
+                "reports.llm.sleep"
+        ) as fake_sleep:
+            with self.assertRaises(LLMRequestError) as raised:
+                client.chat([{"role": "user", "content": "hi"}])
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(fake_urlopen.call_count, 1)
+        fake_sleep.assert_not_called()
+
+    def test_backoff_grows_then_caps(self):
+        self.assertEqual(LLMClient._retry_delay(1), 1.0)
+        self.assertEqual(LLMClient._retry_delay(2), 2.0)
+        self.assertEqual(LLMClient._retry_delay(3), 4.0)
+        self.assertEqual(LLMClient._retry_delay(5), 8.0)
+        self.assertEqual(LLMClient._retry_delay(100), 8.0)

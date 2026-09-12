@@ -10,6 +10,7 @@ import {
 } from '@mui/material'
 
 import { buildCompareRows, deltaOf } from './compare'
+import { metricValueLabel } from './applicability'
 import { formatMetricValue } from './format'
 
 /**
@@ -18,7 +19,9 @@ import { formatMetricValue } from './format'
  * colored by whether the change is an improvement for that metric
  * (the catalog's higher_is_better decides the direction): green =
  * improved, red = worse, gray = unchanged. Values use the same
- * formatting helpers as every other results screen.
+ * formatting helpers as every other results screen — a metric that is
+ * not applicable to the input says so instead of showing an
+ * unexplained dash (ADR-0001).
  */
 
 function DeltaCell({ delta, unit }) {
@@ -91,10 +94,18 @@ export function CompareTable({ baseline, compared, catalogByName }) {
                   {catalogEntry?.display_name ?? row.name}
                 </TableCell>
                 <TableCell>
-                  {formatMetricValue(row.baselineValue, unit)}
+                  {metricValueLabel(
+                    row.baselineMetric,
+                    row.baselineValue,
+                    unit,
+                  )}
                 </TableCell>
                 <TableCell>
-                  {formatMetricValue(row.comparedValue, unit)}
+                  {metricValueLabel(
+                    row.comparedMetric,
+                    row.comparedValue,
+                    unit,
+                  )}
                 </TableCell>
                 <DeltaCell delta={delta} unit={unit} />
               </TableRow>

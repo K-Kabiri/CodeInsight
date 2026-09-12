@@ -1,6 +1,15 @@
 import { Box, Paper, Typography } from '@mui/material'
 
 import { StatusChip } from '../StatusChip'
+import { CompletenessNote } from './CompletenessNote'
+import {
+  NO_VALUE,
+  NOT_APPLICABLE,
+  PARTIAL,
+  VALUE,
+  metricDisplayStatus,
+  metricOutcome,
+} from './applicability'
 import { formatExecutionTime, formatMetricValue } from './format'
 
 // Per-metric floor (in the metric's own unit) below which the
@@ -27,27 +36,33 @@ const DIRECTION_HINT_FLOOR = {
  * One metric's result card (ticket 05): display name, value + unit,
  * status, and execution time. The unit and direction hint come from
  * the public catalog (the Analysis payload itself carries no unit).
- * A `not_applicable`/`partial` metric renders its reason inline so it
- * is never mistaken for a silent gap.
+ *
+ * The status is the *applicability* status when the run finished
+ * without a numeric claim (ADR-0001): a Cyclic Dependencies metric on
+ * a single-file input is labelled "Not applicable" and an Instability
+ * one "Partial", never a green "COMPLETED" beside an unexplained dash
+ * — "nothing to report" and "this metric does not apply here" are
+ * different answers to the user. The engine's own reason renders
+ * inline in both cases, so the missing number is always explained.
  *
  * The "Lower is better" nudge only appears next to a result that can
- * actually carry it: a FAILED metric has no value, and a value below
- * the metric's own floor (see DIRECTION_HINT_FLOOR) means the code is
- * already at the good end of that metric's scale — pinning the hint
- * there would be noise. The floor is per metric because the scales
- * differ (small counts vs a 0–1 fraction vs a percentage vs large
- * totals); a metric without an entry keeps the plain zero rule.
+ * actually carry it: a metric without a scalar has nothing to compare,
+ * and a value below the metric's own floor (see
+ * DIRECTION_HINT_FLOOR) means the code is already at the good end of
+ * that metric's scale — pinning the hint there would be noise. The
+ * floor is per metric because the scales differ (small counts vs a
+ * 0–1 fraction vs a percentage vs large totals); a metric without an
+ * entry keeps the plain zero rule.
  */
 export function MetricCard({ metric, catalogEntry }) {
   const unit = catalogEntry?.unit ?? ''
-  const value =
-    metric.status === 'COMPLETED'
-      ? formatMetricValue(metric.value, unit)
-      : '…'
+  const outcome = metricOutcome(metric)
+  const hasValue = outcome === VALUE
+  const completed = metric.status === 'COMPLETED'
+  const value = completed ? formatMetricValue(metric.value, unit) : '…'
 
   const hintVisible =
-    metric.status === 'COMPLETED' &&
-    typeof metric.value === 'number' &&
+    hasValue &&
     metric.value > 0 &&
     metric.value >= (DIRECTION_HINT_FLOOR[metric.name] ?? 0) &&
     catalogEntry?.higher_is_better === false
@@ -82,12 +97,23 @@ export function MetricCard({ metric, catalogEntry }) {
         >
           {metric.display_name}
         </Typography>
-        <StatusChip status={metric.status} />
+        <StatusChip status={metricDisplayStatus(metric)} />
       </Box>
 
-      <Typography variant="h4" sx={{ fontWeight: 700 }}>
+      <Typography
+        variant="h4"
+        sx={{
+          fontWeight: 700,
+          // A completed metric that claims no number keeps the em dash
+          // as its value slot, de-emphasized: the absence is deliberate
+          // and the note below says why. In-flight and failed metrics
+          // keep their placeholder styling unchanged.
+          color:
+            completed && !hasValue ? 'text.secondary' : 'text.primary',
+        }}
+      >
         {value}
-        {metric.status === 'COMPLETED' && unit && (
+        {hasValue && unit && (
           <Typography
             component="span"
             variant="body2"
@@ -99,7 +125,17 @@ export function MetricCard({ metric, catalogEntry }) {
         )}
       </Typography>
 
-      {(metric.status === 'COMPLETED' || running) && (
+      {(outcome === NOT_APPLICABLE || outcome === PARTIAL) && (
+        <CompletenessNote detail={metric.detail} />
+      )}
+
+      {outcome === NO_VALUE && (
+        <Typography variant="caption" color="text.secondary">
+          No numeric value was claimed for this input.
+        </Typography>
+      )}
+
+      {(completed || running) && (
         <Box
           sx={{
             display: 'flex',
@@ -109,7 +145,7 @@ export function MetricCard({ metric, catalogEntry }) {
           }}
         >
           <Typography variant="caption" color="text.secondary">
-            {metric.status === 'COMPLETED'
+            {completed
               ? `${formatExecutionTime(metric.execution_time)} execution`
               : 'Running…'}
           </Typography>

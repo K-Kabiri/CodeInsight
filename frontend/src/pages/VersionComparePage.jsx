@@ -26,7 +26,7 @@ import {
   newestCompleted,
 } from '../components/results/compare'
 import { MetricCompareChart } from '../components/results/MetricCompareChart'
-import { formatMetricValue } from '../components/results/format'
+import { metricValueLabel } from '../components/results/applicability'
 
 // The headline metrics the ticket names for charts. Each reads its
 // scalar from the persisted detail (see comparisonScalar), so the
@@ -320,7 +320,8 @@ export default function VersionComparePage() {
                       >
                         <Typography variant="caption" color="text.secondary">
                           {baselineVersion
-                            ? `v${baselineVersion.version_number}: ${formatMetricValue(
+                            ? `v${baselineVersion.version_number}: ${metricValueLabel(
+                                baselineMetric,
                                 comparisonScalar(baselineMetric),
                                 catalogEntry?.unit ?? '',
                               )}`
@@ -328,7 +329,8 @@ export default function VersionComparePage() {
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {comparedVersion
-                            ? `v${comparedVersion.version_number}: ${formatMetricValue(
+                            ? `v${comparedVersion.version_number}: ${metricValueLabel(
+                                comparedMetric,
                                 comparisonScalar(comparedMetric),
                                 catalogEntry?.unit ?? '',
                               )}`
